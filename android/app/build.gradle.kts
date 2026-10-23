@@ -41,6 +41,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/relayAssets"))
     testOptions { unitTests.isReturnDefaultValues = true }
+    sourceSets { getByName("test").kotlin.srcDir("src/sharedTest/kotlin"); getByName("androidTest").kotlin.srcDir("src/sharedTest/kotlin") }
     packaging { resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*") }
 }
 

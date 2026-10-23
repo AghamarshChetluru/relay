@@ -12,7 +12,7 @@ data class StoredPacket(
 
 data class AttachmentMeta(val id: String, val caseHex: String, val size: Int, val sha256Hex: String, val w: Int, val h: Int, val complete: Boolean, val received: Int, val authored: Boolean)
 
-data class SentCounts(val total: Int, val good: Int, val detour: Int)
+data class SentCounts(val total: Int, val good: Int, val detour: Int, val lastGoodMs: Long = 0L)
 
 /** Durable state of one phone. [MemoryStore] backs tests; SqliteStore backs the app. Calls are serialized by the engine. */
 interface Store {
@@ -57,7 +57,7 @@ interface Store {
 class MemoryStore : Store {
     private val pk = LinkedHashMap<String, StoredPacket>()
     private val seen = HashMap<String, Long>()
-    private val sent = HashMap<String, MutableList<Triple<String, Long, Boolean>>>()
+    private val sent = HashMap<String, LinkedHashMap<String, Pair<Long, Boolean>>>()
     private val origins = HashMap<String, MutableList<Long>>()
     private val att = LinkedHashMap<String, AttachmentMeta>()
     private val attBytes = HashMap<String, java.io.ByteArrayOutputStream>()
@@ -73,9 +73,9 @@ class MemoryStore : Store {
     override fun markSeen(id: String, untilMs: Long) { seen[id] = maxOf(seen[id] ?: 0L, untilMs) }
     override fun isSeen(id: String) = seen.containsKey(id)
     override fun purgeSeen(nowMs: Long) { seen.entries.removeIf { it.value < nowMs } }
-    override fun recordSent(id: String, peer: String, ms: Long, detour: Boolean) { sent.getOrPut(id) { mutableListOf() }.add(Triple(peer, ms, detour)) }
-    override fun sentCounts(id: String): SentCounts { val l = sent[id] ?: return SentCounts(0, 0, 0); return SentCounts(l.size, l.count { !it.third }, l.count { it.third }) }
-    override fun hasSentTo(id: String, peer: String) = sent[id]?.any { it.first == peer } == true
+    override fun recordSent(id: String, peer: String, ms: Long, detour: Boolean) { sent.getOrPut(id) { LinkedHashMap() }.putIfAbsent(peer, ms to detour) }
+    override fun sentCounts(id: String): SentCounts { val l = sent[id]?.values ?: return SentCounts(0, 0, 0); return SentCounts(l.size, l.count { !it.second }, l.count { it.second }, l.filter { !it.second }.maxOfOrNull { it.first } ?: 0L) }
+    override fun hasSentTo(id: String, peer: String) = sent[id]?.containsKey(peer) == true
     override fun noteOrigin(origin: String, ms: Long) { origins.getOrPut(origin) { mutableListOf() }.add(ms) }
     override fun originCount(origin: String, sinceMs: Long) = origins[origin]?.count { it >= sinceMs } ?: 0
     override fun getAttachmentMeta(id: String) = att[id]

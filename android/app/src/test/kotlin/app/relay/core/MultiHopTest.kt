@@ -66,7 +66,8 @@ class MultiHopTest {
         val req = ok(a.engine.createRequest(missingInput("CP")))
         contact(a, gp); contact(gp, se); contact(se, lc); contact(lc, cp)
         assertTrue("reached the target neighbourhood", cp.has(req.packetId!!))
-        contact(a, js); assertTrue("bounded detour: a farther phone may take one copy rather than leave the packet stuck", js.has(req.packetId!!))
+        contact(a, js); assertFalse("a better-direction relay was found, so no detour yet", js.has(req.packetId!!))
+        clock.minutes(17); contact(a, js); assertTrue("after waiting past patience a bounded detour is allowed rather than leaving the packet stuck", js.has(req.packetId!!))
         val x = phone("BS"); contact(js, x); assertTrue("equal-distance forwarding allowed", x.has(req.packetId!!))
         val cp2 = phone("CP"); contact(cp, cp2); assertTrue("distributed within the target area", cp2.has(req.packetId!!))
         assertTrue("copies that reached the target stay in target + adjacent areas", cp2.store.getPacket(req.packetId!!)!!.tgt)
@@ -83,10 +84,12 @@ class MultiHopTest {
         assertTrue("stale location + waited past patience: bounded to ${cfg.detourCopies + cfg.patientExtra} copies, never unlimited ($got of 6)", got in 1..(cfg.detourCopies + cfg.patientExtra))
         val fresh = phone("HK"); fresh.engine.setHood(null, "Near the old fort"); val rf = ok(fresh.engine.createRequest(missingInput(target = "CP")))
         val ps2 = (1..6).map { phone("GP") }; ps2.forEach { contact(fresh, it) }
+        assertEquals("no better-direction peer can be identified yet, but it has not waited: nothing leaves", 0, ps2.count { it.has(rf.packetId!!) })
+        clock.minutes(4); ps2.forEach { contact(fresh, it) }
         assertEquals("unknown own area, not yet patient: only ${cfg.detourCopies} detour copies", cfg.detourCopies, ps2.count { it.has(rf.packetId!!) })
         val unknown = phone("HK"); val r2 = ok(unknown.engine.createRequest(missingInput(target = "CP").let { RequestInput("missing", "Missing", it.title, area = "somewhere", areaHood = null, areaHoodName = "Somewhere else", validityMin = 1440, targets = emptyList()) }))
         assertEquals(PolicyKind.OPPORTUNISTIC, unknown.store.getPacket(r2.packetId!!)!!.env.route.policy)
-        val ps = (1..6).map { phone("VV") }; ps.forEach { contact(unknown, it) }; assertEquals(3, ps.count { it.has(r2.packetId!!) })
+        val ps = (1..6).map { phone("VV") }; ps.forEach { contact(unknown, it) }; assertEquals("opportunistic fan-out is unaffected by detour waiting", 3, ps.count { it.has(r2.packetId!!) })
     }
 
     @Test fun emergencyRequestsFloodAndOutrankBroadcastsOnABusyLink() {

@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var M = window.Mesh, UI = window.RelayUI = {};
+  var NATIVE = !!window.RELAY_NATIVE, NB = window.RelayNative || {};   // NATIVE: running inside the Android app (real radio, real storage, no simulation)
   var ui = UI.ui = { screen: 'home', seg: 'requests', viewer: null, done: null, form: null, filter: { cat: 'All', area: 'All', help: {} },
     sheet: null, lastFocus: null, onboard: false, snooze: {}, earlierOpen: false, toolsOpen: false, auto: true };
 
@@ -148,7 +149,7 @@
 
   /* ---------- declared neighbourhood: onboarding, area sheet, gentle reminder ---------- */
   function persistArea() {
-    if (ui.viewer !== S().keys.A) return;
+    if (NATIVE || ui.viewer !== S().keys.A) return;
     var n = viewerNode(); store('relay.area', { id: n.hood, name: n.hoodName });
   }
   function applyArea(id, custom) {
@@ -218,7 +219,7 @@
     if (lp) el.appendChild(lp);
     el.appendChild(h('h1', {}, 'We’re here for each other.'));
     el.appendChild(h('p', { class: 'sub' }, 'No cellular signal? You can still reach participating people nearby as messages travel phone to phone.'));
-    el.appendChild(peers ? h('div', { class: 'relaycard' }, icon('signal'), h('div', {}, h('strong', {}, 'Local relay available'),
+    el.appendChild(NATIVE ? radioCard() : peers ? h('div', { class: 'relaycard' }, icon('signal'), h('div', {}, h('strong', {}, 'Local relay available'),
       h('span', {}, peers + ' nearby ' + (peers === 1 ? 'phone has' : 'phones have') + ' Relay. Your posts are saved on this phone first; delivery beyond nearby peers may take time.')))
       : h('div', { class: 'relaycard warn' }, icon('signal'), h('div', {}, h('strong', {}, 'No nearby Relay phones right now'),
         h('span', {}, 'Posts are saved on this phone and will move on when a phone with Relay comes within range.'))));
@@ -234,7 +235,7 @@
       'Requests and updates appear here only after they travel from phone to phone to reach you.'));
     items.forEach(function (it) { el.appendChild(it.t === 'r' ? requestCard(it.o) : updateCard(it.o)); });
     el.appendChild(h('button', { class: 'btn block soft', id: 'btn-share', style: 'margin-top:6px', on: { click: openComposer } }, icon('mega'), 'Share an update with people nearby'));
-    el.appendChild(h('p', { class: 'muted small', style: 'margin:18px 2px 0;text-align:center' }, 'Prototype: nearby phones and their messages are simulated.'));
+    el.appendChild(h('p', { class: 'muted small', style: 'margin:18px 2px 0;text-align:center' }, NATIVE ? 'Messages move only when another phone with Relay is nearby. Nothing is guaranteed to arrive.' : 'Prototype: nearby phones and their messages are simulated.'));
     return el;
   }
 
@@ -353,7 +354,7 @@
     form.appendChild(h('div', { class: 'note' }, 'Your request is saved on this phone first, then passed to nearby phones that have Relay. Saving is not the same as delivery, and nobody is dispatched automatically.'));
     form.appendChild(h('button', { class: 'btn primary block', id: 'req-submit', type: 'submit' }, 'Save request on this phone'));
     el.appendChild(form);
-    el.appendChild(h('button', { class: 'link', id: 'btn-example', style: 'margin-top:10px', on: { click: function () {
+    if (!NATIVE) el.appendChild(h('button', { class: 'link', id: 'btn-example', style: 'margin-top:10px', on: { click: function () {
       if (f.mode === 'urgent') { f.cat = 'Medical'; f.text = 'My mother needs medical assistance. She is having trouble breathing.'; f.where = 'Near the market gate, 2nd lane'; f.urgency = 'urgent'; f.validity = 60; }
       else { f.who = 'Meera, my daughter, 8'; f.desc = 'Red school bag, blue uniform, short black hair.'; f.lastHood = 'CP'; f.lastWhere = 'Connaught Place, near the metro gate'; f.lastContact = 'Earlier today'; f.note = 'She was with her school group.'; }
       f.errors = {}; render(); } } }, 'Use a demo example'));
@@ -389,10 +390,10 @@
     ui.done = { rid: res.requestId, pid: res.packetId }; ui.form = newForm(); render();
   }
   function screenDone() {
-    var r = S().requests[ui.done.rid], cs = M.caseState(ui.viewer, ui.done.rid);
+    var cs = M.caseState(ui.viewer, ui.done.rid);   // may be missing for a moment if the state refresh has not landed yet: never crash on it
     return h('div', { class: 'donescreen' }, h('div', { class: 'ring' }, icon('check', 'lg')), h('h1', {}, 'Saved on this phone'),
-      h('p', { class: 'sub' }, '“' + cs.payload.title + '”'),
-      h('div', { class: 'note', style: 'text-align:left' }, 'Relay will pass it to nearby phones that have Relay. That can take time, and it may not reach everyone. It stays active for ' + span(cs.minutesLeft) + ', then stops being passed along. You can renew it from My activity.'),
+      cs ? h('p', { class: 'sub' }, '“' + cs.payload.title + '”') : null,
+      h('div', { class: 'note', style: 'text-align:left' }, 'Relay will pass it to nearby phones that have Relay. That can take time, and it may not reach everyone. ' + (cs ? 'It stays active for ' + span(cs.minutesLeft) + ', then stops being passed along. ' : '') + 'You can renew it from My activity.'),
       h('div', { class: 'stack' },
         h('button', { class: 'btn primary block', id: 'done-activity', on: { click: function () { ui.done = null; go('activity'); } } }, 'View in My activity'),
         h('button', { class: 'btn block', on: { click: function () { ui.done = null; render(); } } }, 'Make another request')));
@@ -646,6 +647,54 @@
     });
   }
 
+  /* ---------- Android: honest radio status (never simulated) ---------- */
+  function radioState() {
+    var r = NB.radio || {};
+    if (r.bluetoothSupported === false) return { tone: 'warn', short: 'No Bluetooth LE', head: 'This phone cannot use Bluetooth LE', body: 'Relay cannot exchange messages on this phone. You can still write and read posts here.', action: null };
+    if (!r.permissionsGranted) return { tone: 'warn', short: 'Relay radio off · tap', head: 'Relay radio is off', body: 'Allow nearby-device (Bluetooth) access so Relay can find phones around you. No internet, GPS or location is used.', action: ['Allow Bluetooth access', function () { NB.requestPermissions(); }] };
+    if (!r.bluetoothEnabled) return { tone: 'warn', short: 'Bluetooth is off · tap', head: 'Bluetooth is off', body: 'Turn Bluetooth on so Relay can talk to phones nearby.', action: ['Turn on Bluetooth', function () { NB.enableBluetooth(); }] };
+    if (!r.serviceRunning) return { tone: 'warn', short: 'Relay paused · tap', head: 'Relay is paused', body: 'Start Relay to look for nearby phones.', action: ['Start Relay', function () { NB.startRelay(); }] };
+    var n = (r.recentPeers || []).length;
+    if (n) return { tone: 'good', short: 'Phones seen nearby · ' + n, head: 'Phones with Relay seen nearby', body: n + ' seen in the last 2 minutes. Messages move only when a phone connects, and nothing is guaranteed to arrive.', action: null };
+    return { tone: 'info', short: 'Looking for phones…', head: 'Looking for nearby phones', body: 'Your posts are saved on this phone and are passed on when another phone with Relay comes within range.' + (r.canAdvertise === false ? ' This phone can look for others but cannot be found by them.' : ''), action: null };
+  }
+  function radioChip() {
+    var s = radioState();
+    if (s.action) return h('button', { class: 'chipstat ' + s.tone, style: 'min-height:44px;border:0;cursor:pointer', on: { click: s.action[1] } }, icon('signal', 'sm'), s.short);
+    return h('span', { class: 'chipstat ' + s.tone }, icon('signal', 'sm'), s.short);
+  }
+  function radioCard() {
+    var s = radioState();
+    return h('div', { class: 'relaycard' + (s.tone === 'good' ? '' : s.tone === 'info' ? '' : ' warn'), id: 'radio-card' }, icon('signal'), h('div', {}, h('strong', {}, s.head), h('span', {}, s.body),
+      s.action ? h('button', { class: 'btn primary sm', id: 'radio-action', style: 'margin-top:8px', on: { click: s.action[1] } }, s.action[0]) : null));
+  }
+  function openAboutNative() {
+    var shared = null;
+    openSheet('About Relay', function () {
+      var r = NB.radio || {}, el = h('div', {}), s = radioState();
+      el.appendChild(h('p', {}, 'Relay helps neighbours ask for and offer help when cellular networks are down. Phones pass short messages directly to nearby phones that have Relay, over Bluetooth LE.'));
+      el.appendChild(h('div', { class: 'note' }, h('strong', {}, 'No internet is used.'), ' This app has no internet permission. Messages are stored on this phone and passed on only when another phone with Relay is nearby. Delivery is never guaranteed.'));
+      el.appendChild(h('div', { class: 'details', id: 'radio-details' },
+        drow('Radio', s.head), drow('Bluetooth', r.bluetoothEnabled ? 'On' : 'Off'), drow('Permission', r.permissionsGranted ? 'Allowed' : 'Not allowed'),
+        drow('Can be found by others', r.canAdvertise ? 'Yes' : 'No (can only look for others)'), drow('Phones seen (2 min)', String((r.recentPeers || []).length)),
+        drow('Last exchange', r.lastContactMs ? age(Math.floor(r.lastContactMs / 60000)) : 'None yet'), drow('This phone', NB.me ? NB.me.slice(0, 8) : ''),
+        r.lastError ? drow('Last problem', r.lastError) : null));
+      var stack = h('div', { class: 'stack', style: 'margin-top:10px' });
+      if (s.action) stack.appendChild(h('button', { class: 'btn primary block', id: 'about-action', on: { click: s.action[1] } }, s.action[0]));
+      if (r.serviceRunning) stack.appendChild(h('button', { class: 'btn block', id: 'about-stop', on: { click: function () { NB.stopRelay(); } } }, 'Stop Relay'));
+      stack.appendChild(h('button', { class: 'btn block', id: 'about-settings', on: { click: function () { NB.openSettings(); } } }, 'Open Android settings for Relay'));
+      stack.appendChild(h('button', { class: 'btn soft block', id: 'about-share', on: { click: function () { shared = NB.shareApp(); refreshSheet(); } } }, 'Share this app with a nearby person'));
+      el.appendChild(stack);
+      if (shared) el.appendChild(h('div', { class: 'help', id: 'share-result' }, shared.ok ? 'Sharing opened. File check code (SHA-256): ' + shared.sha256 : (shared.error || 'Could not share')));
+      el.appendChild(h('ul', { class: 'muted small', style: 'margin-top:14px' },
+        h('li', {}, 'Offers, sightings and community updates are unverified.'),
+        h('li', {}, 'Exact addresses are encrypted to the volunteer you choose; phones that carry the message cannot read them. This has not had an independent security review.'),
+        h('li', {}, 'Relay may slow down or stop when the phone saves battery. Keep Relay on and the notification visible for best results.'),
+        h('li', {}, 'Requests stay active for the time you choose; missing-person requests 24 hours; community updates 45 minutes.')));
+      return el;
+    });
+  }
+
   /* ---------- About + prototype tools ---------- */
   var PERSONA_NAMES = { A: 'You (requester)', M: 'Volunteer · Green Park', S: 'Neighbour · Lajpat Nagar', L: 'Neighbour · Vasant Vihar', C: 'Volunteer · Safdarjung Enclave', E: 'Volunteer · Lodhi Colony' };
   function personaList() {
@@ -655,6 +704,7 @@
   function setViewer(id) { ui.viewer = id; ui.done = null; ui.form = newForm(); lastSig = signature(); lastCounts = { v: id, c: counts(id) }; render(true); }
   function skipMinutes(n) { for (var i = 0; i < n; i++) M.step(); toast('Skipped ahead ' + n + ' minutes.'); afterTick(true); }
   function openAbout(showTools) {
+    if (NATIVE) { openAboutNative(); return; }
     openSheet('About Relay', function () {
       var el = h('div', {});
       el.appendChild(h('p', {}, 'Relay helps neighbours ask for and offer help when cellular networks are down. Phones pass short messages to nearby phones that have Relay.'));
@@ -710,13 +760,13 @@
   function signature() {
     var v = ui.viewer; if (!v) return '';
     var cs = casesFor(v);
-    return [Object.keys(S().inbox[v]).length, Object.keys(S().outbox[v]).length, M.hoodState(v).due ? 1 : 0, M.hoodState(v).reliable ? 1 : 0,
+    return [NATIVE ? Math.floor(S().tick / 3) : 0, Object.keys(S().inbox[v]).length, Object.keys(S().outbox[v]).length, M.hoodState(v).due ? 1 : 0, M.hoodState(v).reliable ? 1 : 0,
       cs.filter(function (i) { return i.expired; }).length, cs.filter(function (i) { return i.resolved; }).length, cs.filter(function (i) { return i.renewed; }).length].join(':');
   }
   function counts(v) {
     var o = { req: 0, bc: 0, rep: 0, ack: 0, res: 0, ownExp: 0 };
     Object.keys(S().inbox[v]).forEach(function (k) {
-      var p = S().packets[k]; if (p.originNodeId === v) return;
+      var p = S().packets[k]; if (!p || p.originNodeId === v) return;
       if (p.type === 'request') o.req++; else if (p.type === 'broadcast') o.bc++; else if (p.type === 'reply') o.rep++; else if (p.type === 'ack') o.ack++; else if (p.type === 'resolve') o.res++;
     });
     casesFor(v).forEach(function (i) { if (i.r.authorNodeId === v && i.expired && !i.resolved) o.ownExp++; });
@@ -762,7 +812,7 @@
   function renderTop() {
     var v = ui.viewer, peers = M.peers(v), sr = $('statusrow'); clear(sr);
     sr.appendChild(h('span', { class: 'chipstat bad' }, 'Cellular unavailable'));
-    sr.appendChild(peers ? h('span', { class: 'chipstat good' }, icon('signal', 'sm'), 'Local relay · ' + peers + ' nearby') : h('span', { class: 'chipstat warn' }, icon('signal', 'sm'), 'No nearby Relay phones'));
+    if (NATIVE) sr.appendChild(radioChip()); else sr.appendChild(peers ? h('span', { class: 'chipstat good' }, icon('signal', 'sm'), 'Local relay · ' + peers + ' nearby') : h('span', { class: 'chipstat warn' }, icon('signal', 'sm'), 'No nearby Relay phones'));
     var hs = M.hoodState(v), ab = $('area-chip'); clear(ab);
     ab.appendChild(icon('pin', 'sm')); ab.appendChild(h('span', { class: 'an' }, hs.name)); if (!hs.reliable) ab.appendChild(h('span', { class: 'dotwarn', title: 'Area may be out of date' }, '!'));
     ab.setAttribute('aria-label', 'Your area: ' + hs.name + (hs.reliable ? '' : ', may be out of date') + '. Tap to confirm or change.'); ab.className = 'areabtn' + (hs.reliable ? '' : ' stale');
@@ -791,8 +841,8 @@
   UI.render = render;
 
   UI.start = function () {
-    ui.viewer = S().keys.A; seedWorld();
-    ui.onboard = !applyStoredArea(); ui.form = newForm(); ui.auto = true;
+    if (NATIVE) { NB.refresh(); ui.viewer = S().keys.A; ui.onboard = !NB.hoodSet; ui.form = newForm(); ui.auto = false; }
+    else { ui.viewer = S().keys.A; seedWorld(); ui.onboard = !applyStoredArea(); ui.form = newForm(); ui.auto = true; }
     $('btn-info').appendChild(icon('info')); $('sheet-close').appendChild(icon('x'));
     document.querySelector('.mark').appendChild(icon('signal'));
     $('btn-info').addEventListener('click', function () { openAbout(false); }); $('viewing').addEventListener('click', function () { openAbout(true); });
@@ -801,6 +851,8 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ui.sheet) closeSheet(); });
     document.querySelectorAll('[data-nav]').forEach(function (b) { b.addEventListener('click', function () { go(b.getAttribute('data-nav')); }); });
     lastCounts = { v: ui.viewer, c: counts(ui.viewer) };
-    render(true); syncTimer();
+    render(true);
+    if (NATIVE) setInterval(function () { if (window.__relayChanged) window.__relayChanged(); }, 30000); else syncTimer();
   };
+  UI.nativeChanged = function () { afterTick(false); };
 })();

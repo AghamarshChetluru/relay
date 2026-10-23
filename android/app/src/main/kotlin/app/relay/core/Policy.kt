@@ -9,7 +9,7 @@ package app.relay.core
 data class PolicyConfig(
     val floodHops: Int = 60, val broadcastHops: Int = 30, val directedHops: Int = 40, val directedFanout: Int = 3,
     val detourMax: Int = 1, val detourAway: Int = 1, val patienceMs: Long = 16 * Limits.MINUTE_MS, val patientExtra: Int = 2,
-    val oppHops: Int = 10, val oppFanout: Int = 3, val detourCopies: Int = 2,
+    val oppHops: Int = 10, val oppFanout: Int = 3, val detourCopies: Int = 2, val detourWaitMs: Long = 3 * Limits.MINUTE_MS,
     val staleMs: Long = 60 * Limits.MINUTE_MS, val remindMs: Long = 30 * Limits.MINUTE_MS
 )
 
@@ -52,6 +52,11 @@ object Policy {
                 val good = dd != null && ds != null && (dd <= ds || inArea)
                 if (good) return if (sent.good < rt.fanout) Offer(false, dd!!) else null   // fan-out budget: better-direction peers beyond it get nothing (as in the prototype)
                 val patient = !p.tgt && nowMs - p.receivedMs >= cfg.patienceMs
+                // The prototype detours only when no better-direction neighbour still lacks the packet. Pairwise equivalent: this phone has not handed the
+                // packet to a better-direction peer for [detourWaitMs] (counted from receipt or from its last such handoff), or it has used up its
+                // better-direction budget. Patience only raises the budgets below; it does NOT bypass this rule (that made every copy flood).
+                val since = maxOf(p.receivedMs, sent.lastGoodMs)
+                if (!(sent.good >= rt.fanout || nowMs - since >= cfg.detourWaitMs)) return null
                 val dmax = if (p.tgt) 0 else rt.detourMax + (if (patient) cfg.patientExtra else 0)
                 val away = rt.detourAway + (if (patient) 1 else 0)
                 val copiesOk = sent.detour < cfg.detourCopies + (if (patient) cfg.patientExtra else 0)

@@ -1,0 +1,105 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+var q=new URLSearchParams(location.search),W=+q.get('w')||390,HH=+q.get('h')||844,BASE=q.get('base');
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+var frames=[];
+function load(fx,radio){return new Promise(function(res){var f=document.createElement('iframe');f.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';
+ f.src='file://'+BASE+'/app_test.html?fx='+fx+(radio?'&radio='+radio:'');f.onload=function(){setTimeout(function(){res(ctx(f))},250)};document.body.appendChild(f);frames.push(f)})}
+function ctx(f){var w=f.contentWindow,d=w.document,X={w:w,d:d,errs:[]};w.addEventListener('error',function(e){X.errs.push(e.message)});
+ X.Q=function(s){return d.querySelector(s)};X.QA=function(s){return [].slice.call(d.querySelectorAll(s))};
+ X.click=function(s){var e=typeof s==='string'?X.Q(s):s;if(!e)throw new Error('missing '+s);e.click()};
+ X.setv=function(s,v){var e=X.Q(s);e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}));e.dispatchEvent(new w.Event('change',{bubbles:true}))};
+ X.txt=function(){return d.getElementById('screen').textContent};X.sheet=function(){return d.getElementById('sheetbody').textContent};
+ X.all=function(){return d.getElementById('appview').textContent+d.getElementById('sheetbody').textContent};
+ X.calls=function(n){return w.__calls.filter(function(c){return c[0]===n})};
+ X.btn=function(t){return X.QA('button').find(function(b){return b.textContent.trim().indexOf(t)===0})};
+ X.vis=function(e){var r=e.getBoundingClientRect(),cs=w.getComputedStyle(e);return r.width>0&&r.height>0&&cs.display!=='none'&&cs.visibility!=='hidden'};
+ X.layout=function(tag){var vw=d.documentElement.clientWidth,bad=[],small=[],fonts=[],sh=!d.getElementById('sheetroot').hidden;var scope=sh?d.getElementById('sheet'):d.getElementById('appview'),sr=scope.getBoundingClientRect();
+  [].forEach.call(scope.querySelectorAll('*'),function(e){if(e.closest('svg')&&e.tagName!=='svg')return;if(!X.vis(e))return;var r=e.getBoundingClientRect();
+   if(r.right>sr.right+1.5||r.left<sr.left-1.5)bad.push(e.tagName+'.'+(typeof e.className==='string'?e.className:'')+'@'+Math.round(r.left)+'-'+Math.round(r.right));
+   if(e.matches('button,select,input:not(.sr),textarea,summary')&&(r.height<43.5||(e.tagName==='BUTTON'&&r.width<43.5)))small.push((e.id||e.className||e.textContent.slice(0,14))+':'+Math.round(r.width)+'x'+Math.round(r.height));
+   if(e.matches('input[type=text],textarea,select')&&parseFloat(w.getComputedStyle(e).fontSize)<16)fonts.push(e.id)});
+  ok(d.documentElement.scrollWidth<=vw+1&&bad.length===0,tag+': no horizontal overflow @'+W+' '+bad.slice(0,3).join(' | '));ok(small.length===0,tag+': touch targets >=44px '+small.slice(0,4).join(' | '));ok(fonts.length===0,tag+': inputs >=16px')};
+ X.drawn=function(){var cv=d.createElement('canvas');cv.width=120;cv.height=90;var c=cv.getContext('2d');c.fillStyle='#8aa';c.fillRect(0,0,120,90);c.fillStyle='#e8c9a8';c.beginPath();c.arc(60,40,22,0,7);c.fill();return cv.toDataURL('image/jpeg',0.8)};
+ return X}
+async function run(){
+ var M=null;var meta=null;
+ /* ===== A. brand-new phone: onboarding, no seeded fiction, honest radio ===== */
+ var A=await load('empty_new_phone');meta=A.w.__FIX.meta;
+ ok(!!A.Q('#onboarding')&&/Where are you right now/.test(A.txt()),'new phone: asks for neighbourhood (no GPS)');
+ var bad=(A.all().match(/Prototype|simulated|\\bArjun\\b|Skip ahead|demo example/i)||[''])[0];ok(!bad&&!A.Q('#btn-example')&&!A.Q('#demo-tools'),'no prototype/simulation text, seeded people or demo tools in the Android app [matched: "'+bad+'" in: '+(bad?A.all().slice(Math.max(0,A.all().search(/Prototype|simulated|\\bArjun\\b|Skip ahead|demo example/i)-40),A.all().search(/Prototype|simulated|\\bArjun\\b|Skip ahead|demo example/i)+60):'')+']');
+ ok(A.QA('.chipstat').some(function(c){return /Relay radio off/.test(c.textContent)}),'top bar tells the truth: radio is off until permission is granted');
+ var chip=A.QA('button.chipstat')[0];ok(!!chip&&chip.getBoundingClientRect().height>=43.5,'actionable radio chip is a >=44px button');A.layout('onboarding');
+ A.click('.chip[data-hood=HK]');A.click('#ob-continue');ok(A.calls('setHood').length===1&&A.calls('setHood')[0][1]==='HK','choosing an area is saved natively (setHood HK)');
+ A.click(chip.className?A.QA('button.chipstat')[0]:chip);ok(A.calls('requestPermissions').length===1,'tapping the radio chip asks Android for Bluetooth permission');
+ ok(A.QA('#screen article').length===0&&/Nothing has reached this phone yet/.test(A.txt()),'empty phone shows an honest empty state');
+ /* ===== B. requester with an offer, photo and private address ===== */
+ var B=await load('requester_with_offer','radio_peers');
+ B.click('[data-nav=activity]');var cards=B.QA('#screen article[data-rid]');ok(cards.length===2,'requester sees exactly its 2 cases from the real database ('+cards.length+')');
+ var urg=B.Q('#screen article[data-rid="'+meta.urgentCase+'"]');ok(!!urg&&/Offer received/.test(urg.textContent)&&/Shared with a nearby phone/.test(urg.textContent),'urgent case: "Offer received" and "Shared with a nearby phone" derived from real receipts');
+ ok(/Review offer/.test(urg.textContent),'Review offer action present');B.click(B.btn('Review offer'));
+ ok(/Offer of help · Unverified/.test(B.sheet())&&/I am a nurse nearby/.test(B.sheet())&&/not proof/.test(B.sheet()),'offer text from the volunteer, labelled unverified');B.layout('offer sheet');
+ B.click('[data-act=ack]');ok(B.calls('createAck').length===1&&B.calls('createAck')[0][1]===meta.requesterReplyId,'Acknowledge sends the REAL reply packet id to native');
+ var sh=B.Q('[data-act=share-address]');ok(!!sh,'"Share my exact address with this volunteer" offered (private address exists on this phone)');B.click(sh);ok(B.calls('shareAddress').length===1&&B.calls('shareAddress')[0][1]===meta.requesterReplyId,'address share goes to native for that one reply');
+ B.click('#btn-resolve');ok(B.calls('createResolve').length===1&&B.calls('createResolve')[0][1]===meta.urgentCase,'Mark resolved calls native with the case id');
+ B.click('#sheet-close');
+ B.w.__drawnImage=B.drawn();var mis=B.Q('#screen article[data-rid="'+meta.missingCase+'"]');B.click(mis.querySelector('button.soft, button.primary')||mis.querySelector('button'));
+ ok(!!B.Q('#sheet figure.bigphoto img')&&B.Q('#sheet figure.bigphoto img').src.indexOf('data:image/jpeg')===0&&B.calls('attachment').length>0,'own photo is fetched from native and displayed');
+ ok(/Last known location/.test(B.sheet())&&/Connaught Place/.test(B.sheet())&&/Earlier today/.test(B.sheet())&&/Search area/.test(B.sheet()),'own missing-person details (last known location, last contact, search area) come from the database');B.click('#sheet-close');
+ B.click('#area-chip');ok(/Your area/.test(B.d.getElementById('sheet-title').textContent),'area sheet works in native mode');B.click('#sheet-close');
+ ok(B.QA('.chipstat').some(function(c){return /Phones seen nearby · 2/.test(c.textContent)}),'real peer sightings are shown as "seen", not "connected" or "delivered"');
+ B.layout('activity');
+ /* reminder (hood confirmed ~31 min before the snapshot) */
+ B.click('[data-nav=home]');ok(!B.Q('#loc-prompt'),'area confirmed moments ago: no reminder');
+ /* ===== C. volunteer holding the sealed address + photo ===== */
+ var C=await load('volunteer_with_address');C.w.__drawnImage=C.drawn();C.click('[data-nav=feed]');
+ var uc=C.Q('#screen .card[data-rid="'+meta.urgentCase+'"]');ok(!!uc&&/Urgent · Medical/.test(uc.textContent)&&/Not verified/.test(uc.textContent),'volunteer feed lists the received urgent request');
+ var mc=C.Q('#screen .card[data-rid="'+meta.missingCase+'"]');ok(!!mc&&!!mc.querySelector('img.thumb'),'received missing-person card shows the photo thumbnail (bytes received + verified)');
+ C.click(uc.querySelector('.link'));ok(/Exact address \(shared with you by the requester\)/.test(C.sheet())&&/Flat 9, Lane 3/.test(C.sheet())&&/Ring the bell twice/.test(C.sheet()),'addressed volunteer reads the decrypted address');C.layout('address sheet');C.click('#sheet-close');
+ C.click('[data-nav=activity]');ok(/Offers I sent/.test(C.txt())&&/Requester acknowledged|Your offer/.test(C.txt()),'volunteer activity lists its own offer');
+ /* ===== D. relay carrier: carries data it cannot read ===== */
+ var D=await load('relay_carrier');D.click('[data-nav=feed]');
+ ok(D.QA('#screen .card[data-rid]').length>=2,'carrier phone shows the requests that reached it');
+ ok(!/Flat 9|Flat 4B|Ring the bell|Blue gate/.test(D.all()),'a relaying phone\'s UI never contains any exact address');
+ var dm=D.Q('#screen .card[data-rid="'+meta.missingCase+'"]');ok(!!dm&&!!dm.querySelector('img.thumb'),'carrier received the verified photo bytes: thumbnail shown');
+ var PP=await load('photo_pending');PP.click('[data-nav=feed]');var pm=PP.Q('#screen .card[data-rid="'+meta.missingCase+'"]');ok(!!pm&&/Photo on the way/.test(pm.textContent)&&!pm.querySelector('img.thumb'),'photo bytes not received: "Photo on the way", no fake image');
+ /* ===== E. expired / renewed / resolved ===== */
+ var E=await load('expired_renewed_resolved');E.click('[data-nav=activity]');
+ var oc=E.Q('#screen article[data-rid="'+meta.oldCase+'"]');ok(!!oc&&/Renewed/.test(oc.textContent)&&E.QA('#screen article[data-rid="'+meta.oldCase+'"]').length===1,'renewed case: ONE card, marked renewed (old + new packets present)');
+ var dc=E.Q('#screen article[data-rid="'+meta.doneCase+'"]');ok(!!dc&&/Resolved on this phone/.test(dc.textContent),'resolved case shows Resolved');
+ E.click('[data-nav=home]');ok(!!E.Q('#loc-prompt')&&/Are you still in Hauz Khas/.test(E.Q('#loc-prompt').textContent),'area last confirmed 31 min before this snapshot: the reminder is due (age computed from real timestamps)');E.click('#loc-yes');ok(E.calls('confirmHood').length===1,'location reminder confirm goes to native');
+ E.click('[data-nav=feed]');var er=E.Q('#earlier');ok(!!er&&/Expired or resolved/.test(er.textContent),'resolved case sits in the "Expired or resolved" section');
+ /* ===== F. forged resolve must not change status ===== */
+ var F=await load('forged_resolve');F.click('[data-nav=feed]');var vc=F.Q('#screen .card[data-rid="'+meta.victimCase+'"]');
+ ok(!!vc&&vc.getAttribute('data-state')==='active'&&!/Resolved/.test(vc.textContent),'a "resolve" signed by someone other than the requester is ignored (case stays active)');
+ /* ===== G. radio states ===== */
+ var R1=await load('requester_with_offer','radio_permission_missing');ok(/Relay radio is off/.test(R1.txt())&&!!R1.Q('#radio-action')&&/Allow Bluetooth access/.test(R1.Q('#radio-action').textContent),'permission missing -> clear action [screen='+R1.txt().slice(0,160).replace(/\s+/g,' ')+' radio='+JSON.stringify(R1.w.RelayNative.radio).slice(0,120)+']');if(R1.Q('#radio-action'))R1.click('#radio-action');ok(R1.calls('requestPermissions').length===1,'action calls native');
+ var R2=await load('requester_with_offer','radio_bluetooth_off');ok(/Bluetooth is off/.test(R2.txt())&&/Turn on Bluetooth/.test(R2.Q('#radio-action').textContent),'Bluetooth off -> clear action');R2.click('#radio-action');ok(R2.calls('requestEnableBluetooth').length===1,'enable-Bluetooth call');
+ var R3=await load('requester_with_offer','radio_looking');ok(/Looking for nearby phones/.test(R3.txt())&&/cannot be found by them/.test(R3.txt()),'looking state + honest "cannot be found" note for non-advertising phones');
+ var R4=await load('requester_with_offer','radio_peers');ok(/Phones with Relay seen nearby/.test(R4.txt())&&/nothing is guaranteed/i.test(R4.txt()),'peers seen: no delivery claim');
+ var R5=await load('requester_with_offer','radio_unsupported');ok(/cannot use Bluetooth LE/.test(R5.txt())&&!R5.Q('#radio-action'),'unsupported phone: told plainly');
+ /* ===== H. About (native) ===== */
+ R4.click('#btn-info');ok(/No internet is used\./.test(R4.sheet())&&!R4.Q('#demo-tools')&&!R4.Q('#sim-link')&&!/Skip ahead|Use the app as/.test(R4.sheet()),'About: honest, no simulator/persona tools');
+ ok(/Can be found by others/.test(R4.sheet())&&/Phones seen/.test(R4.sheet())&&/independent security review/.test(R4.sheet()),'About lists radio capability and the crypto caveat');R4.layout('about');
+ R4.click('#about-share');ok(R4.calls('shareApp').length===1&&/abababab/.test(R4.sheet()),'Share this app is explicit and shows the file check code');R4.click('#sheet-close');
+ /* ===== I. native rejection is shown, not hidden ===== */
+ var I=await load('volunteer_with_address');I.click('[data-nav=feed]');I.w.__nextResult={ok:false,error:'this request has expired',caseId:null,packetId:null};
+ I.click(I.Q('#screen .card[data-rid="'+meta.urgentCase+'"] .link'));
+ ok(!!I.Q('#r-form'),'volunteer can reply to an active request');I.setv('#r-note','late offer');I.click('#r-submit');ok(/has expired/.test(I.sheet()),'a native rejection is shown to the user');
+ /* ===== J. creating through the form sends exactly what native needs ===== */
+ var J=await load('requester_with_offer');J.click('[data-nav=request]');J.setv('#f-text','Elderly neighbour collapsed. Needs a doctor.');J.setv('#f-where','Gate 2, Sunder Lane');J.click('.chip[data-validity="30"]');
+ J.Q('#addr-details').open=true;J.Q('#addr-details').dispatchEvent(new J.w.Event('toggle'));J.setv('#f-building','Flat 4B');J.click('#req-submit');
+ var rc=J.calls('createRequest')[0];var rj=rc&&JSON.parse(rc[1]);ok(!!rj&&rj.kind==='urgent'&&rj.validity===30&&rj.areaHood==='HK'&&rj.privateAddress.building==='Flat 4B'&&rj.title.indexOf('Medical help needed')===0,'urgent form -> native: kind, 30-min validity, area, private address ('+(rj?rj.validity:'-')+')');
+ ok(/Saved on this phone/.test(J.txt()),'confirmation shown after native accepted');
+ J.click('#done-activity');J.click('[data-nav=request]');J.click('#mode-missing');J.setv('#f-who','Meera');J.setv('#f-lasthood','CP');J.setv('#f-lastwhere','Metro gate');
+ var cv=J.d.createElement('canvas');cv.width=900;cv.height=700;var cx=cv.getContext('2d');var g=cx.createLinearGradient(0,0,900,700);g.addColorStop(0,'#cdb79e');g.addColorStop(1,'#5a6f89');cx.fillStyle=g;cx.fillRect(0,0,900,700);cx.fillStyle='#e8c9a8';cx.beginPath();cx.arc(450,300,140,0,7);cx.fill();
+ var file=await new Promise(function(r){cv.toBlob(function(b){r(new J.w.File([b],'p.jpg',{type:'image/jpeg'}))},'image/jpeg',0.95)});var dt=new J.w.DataTransfer();dt.items.add(file);var inp=J.Q('#photo-input');inp.files=dt.files;inp.dispatchEvent(new J.w.Event('change',{bubbles:true}));
+ var pr=false;for(var t=0;t<400&&!pr;t++){await sleep(100);pr=!!J.Q('#photo-preview')}ok(pr,'photo compressed on the phone');J.click('#req-submit');
+ var mj=JSON.parse(J.calls('createRequest')[1][1]);ok(mj.kind==='missing'&&mj.areaHood==='CP'&&/^data:image\/jpeg;base64,/.test(mj.photo.dataUrl)&&mj.photo.bytes<=15500&&mj.photo.w>=160,'missing-person form -> native with compressed JPEG ('+mj.photo.bytes+' B, '+mj.photo.w+'x'+mj.photo.h+') and target area CP');
+ /* ===== K. layout across screens ===== */
+ var L=await load('requester_with_offer','radio_peers');L.layout('home');L.click('[data-nav=request]');L.layout('request form');L.click('[data-nav=feed]');L.layout('feed');
+ /* ===== L. no runtime errors anywhere ===== */
+ var errs=[];frames.forEach(function(f){var w=f.contentWindow;});[A,B,C,D,PP,E,F,R1,R2,R3,R4,R5,I,J,L].forEach(function(x){errs=errs.concat(x.errs)});ok(errs.length===0,'no runtime errors across all scenarios '+errs.slice(0,2).join(';'));
+}
+run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'});
+</script></body></html>
