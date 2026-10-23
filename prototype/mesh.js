@@ -578,6 +578,9 @@
     peers: peers, sentObserved: sentObserved, receivedRequests: receivedRequests, receivedCases: receivedCases, receivedBroadcasts: receivedBroadcasts,
     caseState: caseState, latestHeld: latestHeld, repliesAt: repliesAt, acksAt: acksAt, myReplies: myReplies, requestView: requestView,
     setHidden: setHidden, setNotRelevant: setNotRelevant, stats: stats, canReach: canReach, coverage: coverage, participating: participating,
-    components: function (on) { return components(S.order.map(function (id) { return { id: id }; }), S.edges, on); } };
+    components: function (on) { return components(S.order.map(function (id) { return { id: id }; }), S.edges, on); },
+    /* Read-only view of the engine's own forwarding decision (the exact function step() calls): who src would hand pid to next step. Added for the
+       simulator's explanations; it does not change routing. Returns [{ d: neighbour, s: distance-to-target or 0, det: true when it is a detour }]. */
+    plan: function (src, pid) { return plan(src, pid, function (d, x) { return nodeHas(d, x); }); } };
   reset();
 })(window);
