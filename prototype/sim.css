@@ -115,3 +115,7 @@ button,select{font:inherit;color:inherit}button{cursor:pointer}[hidden]{display:
 .stepnow{display:flex;flex-direction:column;gap:2px;font-size:15px}
 .steps{margin-top:8px}.steps summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:650;min-height:30px;display:flex;align-items:center}
 .story li{padding:4px 0;font-size:13.5px}
+.zone-sub{font-size:.82em;font-weight:700;letter-spacing:.06em;fill:#6a7f9c}.zone-t.target .zone-sub{fill:#5b2fa6}
+.bar{gap:10px 12px;padding:8px 16px}#scenario{min-width:200px}.simtag{font-size:11.5px;padding:4px 10px}
+.legend{gap:4px 14px;padding:7px 12px;font-size:12px}
+.foot{padding:5px 20px 8px;font-size:12px;line-height:1.35}

@@ -173,7 +173,10 @@
     s.hoods.forEach(function (hd) {
       var z = st.zoneEls[hd.id], isT = targets.indexOf(hd.hood) >= 0, d = targets.length ? M.hoodDistance(hd.hood, targets[0]) : null;
       z.r.setAttribute('class', 'zone' + (s.hoods.indexOf(hd) % 2 ? ' alt' : '') + (isT ? ' target' : '')); z.t.setAttribute('class', 'zone-t' + (isT ? ' target' : ''));
-      z.t.setAttribute('style', 'font-size:' + (11 * u) + 'px'); z.t.textContent = hd.name.toUpperCase() + (isT ? ' · TARGET AREA' : targets.length && d !== null ? ' · ' + d + (d === 1 ? ' STEP AWAY' : ' STEPS AWAY') : '');
+      z.t.setAttribute('style', 'font-size:' + (11 * u) + 'px'); clear(z.t);
+      var t1 = el('tspan', { x: hd.x + 16 }, z.t); t1.textContent = hd.name.toUpperCase();
+      var sub = isT ? 'TARGET AREA' : targets.length && d !== null ? d + (d === 1 ? ' STEP AWAY' : ' STEPS AWAY') : '';
+      if (sub) { var t2 = el('tspan', { x: hd.x + 16, dy: 13 * u, class: 'zone-sub' }, z.t); t2.textContent = sub; }   // second line: distance to the target in the neighbourhood graph
     });
     s.order.forEach(function (id) {
       var e = st.nodeEls[id], n = s.nodes[id], on = M.canRelay(id), cls = 'n ' + (on ? 'on' : 'off'), sw = 1.7, r = n.key ? 8 : 5.2;
@@ -527,7 +530,7 @@
       if (e.target === document.body && e.key === ' ') { e.preventDefault(); if (st.playing) pause(); else if (!$('btn-play').disabled) play(null); }
     });
     var lg = $('legend'); lg.setAttribute('aria-label', 'Legend');
-    [['sw on', 'Relay phone'], ['sw has', 'Has the message'], ['sw reach', 'Could still receive'], ['sw cut', 'Cut off from it'], ['sw off', 'No Relay'], ['sw origin', 'Origin'], ['sw dest', 'Responder / destination'], ['sw gap', 'Gap: could connect'], ['sw front', 'Hands it on next'],
+    [['sw on', 'Relay phone'], ['sw has', 'Has the message'], ['sw reach', 'Could still receive'], ['sw cut', 'Cut off from it'], ['sw off', 'No Relay'], ['sw front', 'Hands it on next'],
       ['ln', 'Path it took'], ['ln hop', 'Moved this step'], ['ln next', 'Will move next'], ['ln held', 'Held back']].forEach(function (x) { lg.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
     build(); attach(); fit(); paint();
   }

@@ -16,7 +16,7 @@ var reduced=w.matchMedia('(prefers-reduced-motion: reduce)').matches,vw=d.docume
 ok(/Mobile networks are down/.test(T('#situation'))&&/needs a doctor/.test(T('#situation')),'Q1 problem: the situation card says who needs what and why');
 ok(QA('#phases li').length===5&&/Create/.test(T('#phases'))&&/Outcome/.test(T('#phases')),'walkthrough phases: Create, Spread, Obstacle, Change, Outcome');
 ok(/Schematic network/.test(T('#schematic'))&&/not a map/.test(T('#schematic'))&&/not real Bluetooth/.test(T('#simtag')),'canvas labelled schematic, simulation tag always visible');
-ok(QA('#legend span').length>=12,'legend explains node states and line types ('+QA('#legend span').length+' entries)');
+ok(QA('#legend span').length>=10,'legend explains node states and line types ('+QA('#legend span').length+' entries)');
 click('#btn-do');var pid=R.state.pid,s0=S();
 ok(/Medical help needed near Hauz Khas/.test(T('#msgcard'))&&/Urgent/.test(T('#msgcard'))&&T('#m-holders')==='Held by 1 Relay phone: My phone (the origin)','Q2 message card shows the engine request text and who holds it');
 ok(s0.requests[Object.keys(s0.requests)[0]].title===X.packetInfo(pid).title,'message card text is the engine request, not presentation text');
