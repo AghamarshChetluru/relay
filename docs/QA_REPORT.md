@@ -12,8 +12,8 @@ No physical Android phone was available. Nothing below proves that Bluetooth wor
 | Baseline simulator (1280/1440) | PASS 73/73 per width | tests/run_sim.sh |
 | Independent audit engine tests | PASS 28/28 (incl. the cleartext-address detection test, which documents a flaw in the *browser* model) | tests/run_independent_audit.sh |
 | Independent route stress | 120/120 scenarios ran; target area reached 120/120 (simulation only) | tests/run_independent_audit.sh |
-| Kotlin protocol core, policy, store, link sessions, BLE scheduling policy | PASS 85/85 JVM tests (61 + 24 in `BlePolicyTest`) | `./gradlew :app:testDebugUnitTest` |
-| Native WebView adapter vs real engine snapshots | PASS 75/75 at 3 widths | tests/run_android_ui.sh |
+| Kotlin protocol core, policy, store, link sessions, BLE scheduling policy | PASS 93/93 JVM tests (61 core + 24 `BlePolicyTest` + 8 `DiagnosticsTest`) | `./gradlew :app:testDebugUnitTest` |
+| Native WebView adapter vs real engine snapshots | PASS 82/82 at 3 widths (incl. Field Test Diagnostics and radio-status redraw) | tests/run_android_ui.sh |
 | Android lint | 0 issues (a small, explicit lint.xml ignore list is committed) | `./gradlew :app:lintDebug` |
 | Debug APK structure | PASS (web assets, native bridge, no INTERNET permission) | tests/verify_apk.sh |
 | Instrumented tests on API 34 arm64 **emulator** | PASS 18/18 incl. real WebView loading bundled UI | `./gradlew :app:connectedDebugAndroidTest` |
@@ -29,6 +29,15 @@ guarded by `tests/verify_apk.sh` plus the real-WebView instrumented test.
 - Advertising now restarts when the hourly tag **or** the inventory digest changes (previously only the digest, so an idle phone kept one tag indefinitely).
 - A new post/reply now opens a scan burst immediately (high-intensity window, >= 8 s after the previous start to respect Android's 5-starts-per-30-s throttle) instead of waiting for the next 60 s tick; peers dialled after a clean session get a 10 s cooldown instead of 60 s when we have new data.
 - The two defects are covered by `BlePolicyTest`; reintroducing either defect makes those tests fail (checked by mutation). These prove scheduling logic only, **not** radio behaviour.
+
+## Field-test build (2026-10-23): `Relay-Android-FieldTest.apk`
+
+Signed release build (test key, v2 signature verified), minSdk 26. Found and fixed while preparing it, all on the emulator:
+- **"Add a photo" did nothing in the app** (the WebView had no file chooser). Added an image-only system picker; verified picker -> on-phone compression (8.6 KB) -> preview. Photo delivery over Bluetooth is still untested.
+- **Home screen kept saying "Relay radio is off"** after permission was granted (the redraw check ignored radio status). Fixed; covered by a UI test that fails without the fix.
+- **Instrumented-test isolation:** a test deleted the live database; now resets only the onboarding flag. 18/18 on the emulator.
+- Added **Field Test Diagnostics** (counters + short event log + share-as-text); no message text, addresses, IDs or keys.
+- Emulator limits: its virtual Bluetooth lets scanning/advertising start but has no peers, so no discovery, connection or exchange is exercised.
 
 ## UNTESTED / UNVERIFIED (requires physical phones)
 

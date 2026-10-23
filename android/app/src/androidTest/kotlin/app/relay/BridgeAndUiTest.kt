@@ -15,7 +15,7 @@ class BridgeAndUiTest {
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
     private val host = object : NativeBridge.Host {
         override fun requestPermissions() {}; override fun requestEnableBluetooth() {}; override fun openAppSettings() {}
-        override fun shareApp() = "{}"; override fun startRelay() {}; override fun stopRelay() {}
+        override fun shareApp() = "{}"; override fun startRelay() {}; override fun stopRelay() {}; override fun shareDiagnostics() = "{}"
     }
     @Suppress("UNCHECKED_CAST") private fun j(s: String) = Json.parse(s) as Map<String, Any?>
 
@@ -35,7 +35,8 @@ class BridgeAndUiTest {
     }
 
     @Test fun realWebViewLoadsTheBundledUiFromAssetsAndShowsOnboarding() {
-        ctx.deleteDatabase("relay.db")
+        // Show onboarding again WITHOUT deleting the live database (the app's singleton holds it open; deleting it broke whichever test ran next).
+        RelayRuntime.engine(ctx); ctx.openOrCreateDatabase("relay.db", android.content.Context.MODE_PRIVATE, null).use { it.execSQL("DELETE FROM settings WHERE k='hoodConfirmedMs'") }
         ActivityScenario.launch(MainActivity::class.java).use { sc ->
             val latch = CountDownLatch(1); var text = ""
             val deadline = System.currentTimeMillis() + 20_000
@@ -45,6 +46,8 @@ class BridgeAndUiTest {
                 l.await(2, TimeUnit.SECONDS); Thread.sleep(400)
             }
             assertTrue("UI text was: $text", text.contains("Where are you right now"))
+            var hasChooser = false; sc.onActivity { a -> hasChooser = a.webViewForTest.webChromeClient != null }
+            assertTrue("a file chooser must exist or the Add a photo button does nothing", hasChooser)
             val l2 = CountDownLatch(1); var nativeFlag = ""
             sc.onActivity { a -> a.webViewForTest.evaluateJavascript("String(window.RELAY_NATIVE)+'|'+typeof window.RelayAndroid+'|'+(document.body.textContent.indexOf('Prototype')>=0)") { v -> nativeFlag = v ?: ""; l2.countDown() } }
             l2.await(5, TimeUnit.SECONDS); assertEquals("\"true|object|false\"", nativeFlag)

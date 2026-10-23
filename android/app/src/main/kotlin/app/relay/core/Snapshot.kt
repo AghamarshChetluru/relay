@@ -4,11 +4,12 @@ package app.relay.core
 data class RadioStatus(
     val bluetoothSupported: Boolean = true, val bluetoothEnabled: Boolean = false, val permissionsGranted: Boolean = false,
     val canAdvertise: Boolean = false, val scanning: Boolean = false, val advertising: Boolean = false, val serviceRunning: Boolean = false,
-    val recentPeers: List<String> = emptyList(), val connectedPeers: Int = 0, val lastContactMs: Long = 0L, val lastError: String = ""
+    val recentPeers: List<String> = emptyList(), val connectedPeers: Int = 0, val lastContactMs: Long = 0L, val lastError: String = "",
+    val diagJson: String = "null"
 ) {
     fun toJson(): String = JsonObj().bool("bluetoothSupported", bluetoothSupported).bool("bluetoothEnabled", bluetoothEnabled).bool("permissionsGranted", permissionsGranted)
         .bool("canAdvertise", canAdvertise).bool("scanning", scanning).bool("advertising", advertising).bool("serviceRunning", serviceRunning)
-        .raw("recentPeers", jsonStrings(recentPeers)).num("connectedPeers", connectedPeers.toLong()).num("lastContactMs", lastContactMs).str("lastError", lastError).end()
+        .raw("recentPeers", jsonStrings(recentPeers)).num("connectedPeers", connectedPeers.toLong()).num("lastContactMs", lastContactMs).str("lastError", lastError).raw("diag", diagJson).end()
 }
 
 /** Serialises the phone's own durable state for the WebView. Contains only what THIS phone holds; never any global/simulated data. */

@@ -105,6 +105,7 @@
   NB.openSettings = function () { RA.openAppSettings(); };
   NB.startRelay = function () { RA.startRelay(); };
   NB.stopRelay = function () { RA.stopRelay(); };
+  NB.shareDiagnostics = function () { return parse(RA.shareDiagnostics ? RA.shareDiagnostics() : '') || { ok: false, error: 'Could not prepare the report' }; };
   NB.shareApp = function () { return parse(RA.shareApp()) || { ok: false, error: 'Could not share' }; };
 
   window.__relayChanged = function () { if (NB.refresh() && window.RelayUI && window.RelayUI.nativeChanged) window.RelayUI.nativeChanged(); };

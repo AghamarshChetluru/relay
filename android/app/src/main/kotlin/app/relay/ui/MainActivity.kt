@@ -24,7 +24,9 @@ class MainActivity : Activity(), NativeBridge.Host {
     private lateinit var web: WebView
     internal val webViewForTest: WebView get() = web
     private val main = Handler(Looper.getMainLooper())
+    private companion object { const val REQ_PHOTO = 9 }
     private var pendingPush = false
+    private var fileCallback: ValueCallback<Array<Uri>>? = null      // photo picker for <input type=file>; must ALWAYS be answered or the input stays dead
     private val listener: () -> Unit = {
         if (!pendingPush) { pendingPush = true; main.postDelayed({ pendingPush = false; push() }, 250) }
     }
@@ -43,6 +45,15 @@ class MainActivity : Activity(), NativeBridge.Host {
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? = loader.shouldInterceptRequest(r.url)
             override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean = r.url.host != "appassets.androidplatform.net"   // never navigate away from our own pages
+        }
+        // Without this, <input type=file> silently does nothing in a WebView and photos could never be attached. Images only, via the system picker (no storage permission).
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(v: WebView, cb: ValueCallback<Array<Uri>>, p: FileChooserParams): Boolean {
+                fileCallback?.onReceiveValue(null); fileCallback = cb
+                return try {
+                    startActivityForResult(Intent.createChooser(Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"), "Choose a photo"), REQ_PHOTO); true
+                } catch (e: Exception) { fileCallback = null; cb.onReceiveValue(null); false }
+            }
         }
         web.addJavascriptInterface(NativeBridge(this, this), "RelayAndroid")
         setContentView(web)
@@ -74,10 +85,25 @@ class MainActivity : Activity(), NativeBridge.Host {
             try { startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), 8) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
         }
     }
-    @Deprecated("only used to refresh status after the system Bluetooth prompt") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode, resultCode, data); startRelay(); RelayRuntime.notifyChanged() }
+    @Deprecated("photo picker result and refresh after the system Bluetooth prompt") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PHOTO) { fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data)); fileCallback = null; return }   // null when cancelled
+        startRelay(); RelayRuntime.notifyChanged()
+    }
+    override fun onDestroy() { fileCallback?.onReceiveValue(null); fileCallback = null; super.onDestroy() }
     override fun openAppSettings() { runOnUiThread { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))) } }
     override fun startRelay() { RelayService.start(this); RelayRuntime.ble(this).start() }
     override fun stopRelay() { RelayService.stop(this) }
+    /** Field-test report: counters + short event phrases + phone model. Contains no message text, addresses, IDs or keys (see core/Diagnostics.kt). The user picks where it goes. */
+    override fun shareDiagnostics(): String = try {
+        val ble = RelayRuntime.ble(this); val st = ble.status()
+        val header = listOf("App: ${packageManager.getPackageInfo(packageName, 0).versionName}", "Phone: ${Build.MANUFACTURER} ${Build.MODEL}", "Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            "Bluetooth LE: ${st.bluetoothSupported}, enabled: ${st.bluetoothEnabled}, permissions: ${st.permissionsGranted}, can advertise: ${st.canAdvertise}",
+            "Radio running: ${st.serviceRunning}, scanning: ${st.scanning}, advertising: ${st.advertising}, last problem: ${st.lastError.ifEmpty { "none" }}")
+        val text = ble.diag.report(header)
+        runOnUiThread { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Relay diagnostics").putExtra(Intent.EXTRA_TEXT, text), "Share diagnostics")) }
+        JsonObj().bool("ok", true).str("error", null).end()
+    } catch (e: Exception) { JsonObj().bool("ok", false).str("error", "Could not prepare the report").end() }
     override fun shareApp(): String = try {
         val p = ApkShare.prepare(this); runOnUiThread { startActivity(ApkShare.intent(this, p)) }
         JsonObj().bool("ok", true).str("sha256", p.sha256).num("bytes", p.bytes).str("error", null).end()

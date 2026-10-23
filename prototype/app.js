@@ -668,6 +668,29 @@
     return h('div', { class: 'relaycard' + (s.tone === 'good' ? '' : s.tone === 'info' ? '' : ' warn'), id: 'radio-card' }, icon('signal'), h('div', {}, h('strong', {}, s.head), h('span', {}, s.body),
       s.action ? h('button', { class: 'btn primary sm', id: 'radio-action', style: 'margin-top:8px', on: { click: s.action[1] } }, s.action[0]) : null));
   }
+  /* Field Test Diagnostics (Android build only): says which step of discovery -> connection -> exchange worked. No message text, addresses, IDs or keys. */
+  function fieldDiagnostics(r) {
+    var d = r.diag || {}, c = d.counters || {}, ev = d.events || [], n = function (k) { return String(c[k] || 0); };
+    var box = h('details', { class: 'details', id: 'field-diag', style: 'margin-top:12px' }, h('summary', { style: 'cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center' }, 'Field Test Diagnostics (for testers)'));
+    box.appendChild(h('p', { class: 'muted small' }, 'Shows which step worked. A packet counts as stored only when the other phone itself confirmed it. Contains no message text, addresses or keys.'));
+    box.appendChild(h('div', { class: 'details' },
+      drow('1. Bluetooth', r.bluetoothEnabled ? 'On' : 'OFF'), drow('2. Permissions', r.permissionsGranted ? 'Allowed' : 'NOT allowed'),
+      drow('3. Relay running', r.serviceRunning ? 'Yes' : 'No'), drow('4. Scanning now', r.scanning ? 'Yes' : 'No (between windows)'),
+      drow('5. Advertising (findable)', r.advertising ? 'Yes' : (r.canAdvertise ? 'Not yet' : 'Not supported on this phone')),
+      drow('6. Relay phones found', n('distinctPeersSeen') + ' (' + n('sightings') + ' sightings)'),
+      drow('7. Connections made', n('connectionsEstablished') + ' (' + n('connectAttempts') + ' attempts, ' + n('linksClosedBeforeExchange') + ' dropped before exchange)'),
+      drow('8. Exchanges', n('sessionsCompleted') + ' completed, ' + n('sessionsFailed') + ' ended early'),
+      drow('9. Our packets confirmed stored by another phone', n('packetsConfirmedStoredByPeer')),
+      drow('10. New packets stored from others', n('packetsStoredFromPeer')),
+      drow('Duplicates ignored / rejected / photos', n('duplicatesIgnored') + ' / ' + n('packetsRejected') + ' / ' + n('photosReceived')),
+      drow('Problems', n('errors') + (r.lastError ? ' (latest: ' + r.lastError + ')' : ''))));
+    var list = h('ul', { class: 'muted small', id: 'diag-events', style: 'margin:8px 0' });
+    ev.slice(0, 15).forEach(function (e) { var sec = Math.max(0, Math.round((Date.now() - e.at) / 1000)); list.appendChild(h('li', {}, (sec < 120 ? sec + ' s' : Math.round(sec / 60) + ' min') + ' ago: ' + e.text + (e.n > 1 ? ' (x' + e.n + ')' : ''))); });
+    if (!ev.length) list.appendChild(h('li', {}, 'Nothing yet.'));
+    box.appendChild(list);
+    box.appendChild(h('button', { class: 'btn soft block', id: 'diag-share', on: { click: function () { var o = NB.shareDiagnostics(); if (!o.ok) toast(o.error || 'Could not share'); } } }, 'Share diagnostic log'));
+    return box;
+  }
   function openAboutNative() {
     var shared = null;
     openSheet('About Relay', function () {
@@ -679,6 +702,7 @@
         drow('Can be found by others', r.canAdvertise ? 'Yes' : 'No (can only look for others)'), drow('Phones seen (2 min)', String((r.recentPeers || []).length)),
         drow('Last exchange', r.lastContactMs ? age(Math.floor(r.lastContactMs / 60000)) : 'None yet'), drow('This phone', NB.me ? NB.me.slice(0, 8) : ''),
         r.lastError ? drow('Last problem', r.lastError) : null));
+      if (r.diag) el.appendChild(fieldDiagnostics(r));      // clearly marked, collapsed by default: normal users never need it
       var stack = h('div', { class: 'stack', style: 'margin-top:10px' });
       if (s.action) stack.appendChild(h('button', { class: 'btn primary block', id: 'about-action', on: { click: s.action[1] } }, s.action[0]));
       if (r.serviceRunning) stack.appendChild(h('button', { class: 'btn block', id: 'about-stop', on: { click: function () { NB.stopRelay(); } } }, 'Stop Relay'));
@@ -757,11 +781,13 @@
     lastSig = signature();
   }
   var lastSig = '', pendingRender = false, timer = null, lastCounts = null;
+  function radioSig() { var r = NB.radio || {}; return [r.bluetoothSupported, r.permissionsGranted, r.bluetoothEnabled, r.serviceRunning, (r.recentPeers || []).length].join(','); }
   function signature() {
     var v = ui.viewer; if (!v) return '';
     var cs = casesFor(v);
     return [NATIVE ? Math.floor(S().tick / 3) : 0, Object.keys(S().inbox[v]).length, Object.keys(S().outbox[v]).length, M.hoodState(v).due ? 1 : 0, M.hoodState(v).reliable ? 1 : 0,
-      cs.filter(function (i) { return i.expired; }).length, cs.filter(function (i) { return i.resolved; }).length, cs.filter(function (i) { return i.renewed; }).length].join(':');
+      cs.filter(function (i) { return i.expired; }).length, cs.filter(function (i) { return i.resolved; }).length, cs.filter(function (i) { return i.renewed; }).length,
+      NATIVE ? radioSig() : ''].join(':');   // Android: a change in radio state (permission granted, Bluetooth on, phones seen) must redraw the status chip/card
   }
   function counts(v) {
     var o = { req: 0, bc: 0, rep: 0, ack: 0, res: 0, ownExp: 0 };

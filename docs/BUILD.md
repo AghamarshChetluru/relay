@@ -30,3 +30,13 @@ A release build is signed from environment variables that are **never committed*
 
 ## Installing on another phone (explicit, user-approved)
 Use the app's **About → Share this app** (Android share sheet). The recipient must approve installation from that source. The sender shows the SHA-256 printed by the app; the recipient can compare it with `shasum -a 256` on the file.
+
+
+## Field-test signing (two-phone test builds)
+Release builds are signed only when these environment variables are set (never committed): `RELAY_KEYSTORE`, `RELAY_KEYSTORE_PASSWORD`, `RELAY_KEY_ALIAS`, `RELAY_KEY_PASSWORD`. The author keeps a dedicated *test* keystore outside the repository (`~/.relay-field-test-keys/`) so every field-test APK has the same signature and installs over the previous one. It is not a production key. `.gitignore` excludes `*.jks`, `*.keystore`, `signing.env` and `dist/`.
+
+    set -a; . ~/.relay-field-test-keys/signing.env; set +a
+    cd android && ./gradlew assembleRelease     # -> app/build/outputs/apk/release/app-release.apk
+    tests/verify_apk.sh android/app/build/outputs/apk/release/app-release.apk
+    apksigner verify --print-certs <apk>
+Install and test steps for testers: `docs/INSTALL_AND_TEST.md`.

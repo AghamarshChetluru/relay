@@ -42,6 +42,9 @@ class UiFixturesTest {
         fixtures["radio_bluetooth_off"] = snap(a, RadioStatus(true, false, true, true, false, false, true))
         fixtures["radio_looking"] = snap(a, RadioStatus(true, true, true, false, true, false, true))
         fixtures["radio_peers"] = snap(a, RadioStatus(true, true, true, true, true, true, true, listOf("11223344", "55667788"), 1, clock.nowMs() - 5 * Limits.MINUTE_MS, ""))
+        val dg = Diagnostics(clock = { clock.nowMs() }); dg.count("sightings", 5); dg.peerSeen("a1b2"); dg.count("connectAttempts", 2); dg.count("connectionsEstablished", 1); dg.count("sessionsCompleted", 1)
+        dg.count("packetsConfirmedStoredByPeer", 3); dg.count("packetsStoredFromPeer", 2); dg.event("found a Relay phone (id a1b2)"); dg.event("problem: Scan failed (2)")
+        fixtures["radio_diag"] = snap(a, RadioStatus(true, true, true, true, true, true, true, listOf("a1b2c3d4"), 0, clock.nowMs() - 60_000, "Scan failed (2)", dg.toJson()))
         fixtures["radio_unsupported"] = snap(a, RadioStatus(false, false, false, false, false, false, false))
         val aid = a.store.attachments().first { it.authored }.id
         attachments[aid] = "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(a.store.attachmentBytes(aid)!!)

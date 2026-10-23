@@ -12,7 +12,7 @@ import app.relay.core.*
  */
 class NativeBridge(private val ctx: Context, private val host: Host) {
     interface Host {
-        fun requestPermissions(); fun requestEnableBluetooth(); fun openAppSettings(); fun shareApp(): String; fun startRelay(); fun stopRelay()
+        fun requestPermissions(); fun requestEnableBluetooth(); fun openAppSettings(); fun shareApp(): String; fun startRelay(); fun stopRelay(); fun shareDiagnostics(): String
     }
     private val engine get() = RelayRuntime.engine(ctx)
 
@@ -67,5 +67,6 @@ class NativeBridge(private val ctx: Context, private val host: Host) {
     @JavascriptInterface fun startRelay() = host.startRelay()
     @JavascriptInterface fun stopRelay() = host.stopRelay()
     @JavascriptInterface fun shareApp(): String = host.shareApp()
+    @JavascriptInterface fun shareDiagnostics(): String = host.shareDiagnostics()
     private fun nudge() { try { RelayRuntime.ble(ctx).nudge() } catch (_: Exception) {} }
 }

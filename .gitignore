@@ -34,3 +34,8 @@ secrets/
 # Test scratch output
 tests/out/
 dist/
+
+# signing material: never commit
+*.jks
+*.keystore
+signing.env

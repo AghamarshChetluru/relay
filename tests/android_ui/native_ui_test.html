@@ -82,6 +82,17 @@ async function run(){
  R4.click('#btn-info');ok(/No internet is used\./.test(R4.sheet())&&!R4.Q('#demo-tools')&&!R4.Q('#sim-link')&&!/Skip ahead|Use the app as/.test(R4.sheet()),'About: honest, no simulator/persona tools');
  ok(/Can be found by others/.test(R4.sheet())&&/Phones seen/.test(R4.sheet())&&/independent security review/.test(R4.sheet()),'About lists radio capability and the crypto caveat');R4.layout('about');
  R4.click('#about-share');ok(R4.calls('shareApp').length===1&&/abababab/.test(R4.sheet()),'Share this app is explicit and shows the file check code');R4.click('#sheet-close');
+ ok(!R4.Q('#field-diag'),'no diagnostics section when the phone reports none (normal experience stays clean)');
+ var D=await load('requester_with_offer','radio_diag');D.click('#btn-info');var fd=D.Q('#field-diag');
+ ok(!!fd&&fd.tagName==='DETAILS'&&!fd.open&&/Field Test Diagnostics/.test(fd.textContent),'Field Test Diagnostics is clearly labelled and collapsed by default');
+ ok(/Relay phones found\s*1 \(5 sightings\)/.test(fd.textContent)&&/Connections made\s*1 \(2 attempts/.test(fd.textContent)&&/confirmed stored by another phone\s*3/.test(fd.textContent)&&/New packets stored from others\s*2/.test(fd.textContent),'diagnostics show discovery, connection and peer-confirmed storage counters');
+ ok(/found a Relay phone \(id a1b2\)/.test(fd.textContent)&&/problem: Scan failed \(2\)/.test(fd.textContent)&&/Contains no message text, addresses or keys/.test(fd.textContent),'recent events and the privacy note are shown');
+ D.click('#diag-share');ok(D.calls('shareDiagnostics').length===1,'Share diagnostic log goes to native');D.click('#sheet-close');
+ /* radio state changes after first render must reach the screen (regression: permission granted -> chip stayed "Relay radio off") */
+ var RC=await load('requester_with_offer','radio_permission_missing');ok(/Relay radio is off/.test(RC.txt()),'starts with the radio off');
+ RC.w.__relayChanged();await new Promise(function(r){setTimeout(r,100)});   /* prime the page's redraw signature exactly like earlier pushes do on a real phone */
+ RC.w.__radioFx='radio_peers';RC.w.__relayChanged();await new Promise(function(r){setTimeout(r,300)});
+ ok(/Phones with Relay seen nearby/.test(RC.txt())&&!/Relay radio is off/.test(RC.txt()),'when the radio status changes natively, the home screen updates without any other change');
  /* ===== I. native rejection is shown, not hidden ===== */
  var I=await load('volunteer_with_address');I.click('[data-nav=feed]');I.w.__nextResult={ok:false,error:'this request has expired',caseId:null,packetId:null};
  I.click(I.Q('#screen .card[data-rid="'+meta.urgentCase+'"] .link'));

@@ -44,6 +44,8 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     private var advertising = false; private var scanning = false; private var lastError = ""
     private var lastContactMs = 0L; private var adCallback: AdvertiseCallback? = null
     private val adState = AdvertisingState(engine.identity.deviceId)
+    val diag = Diagnostics().also { d -> d.sink = { android.util.Log.i("RelayDiag", it) } }    // field-test diagnostics: no message content, addresses or keys
+    private fun err(msg: String) { lastError = msg; diag.count("errors"); diag.event("problem: $msg") }
     private val planner = ScanPlanner()
     private var advertisingBroken = false          // the platform refused to advertise on this phone: behave as scan-only so the role rule makes us dial
     private val links = ConcurrentHashMap<String, Link>()             // key: device address
@@ -65,7 +67,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     fun status(): RadioStatus {
         val now = System.currentTimeMillis()
         val recent = seenTags.entries.filter { now - it.value < RECENT_PEER_MS }.map { it.key }
-        return RadioStatus(bleSupported(), adapter?.isEnabled == true, hasPermissions(), canAdvertise(), scanning, advertising, running, recent, links.values.count { it.session != null && !it.session!!.closed }, lastContactMs, lastError)
+        return RadioStatus(bleSupported(), adapter?.isEnabled == true, hasPermissions(), canAdvertise(), scanning, advertising, running, recent, links.values.count { it.session != null && !it.session!!.closed }, lastContactMs, lastError, diag.toJson())
     }
 
     private val stateReceiver = object : BroadcastReceiver() {
@@ -91,14 +93,14 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     // ------------------------------------------------------------------ radio lifecycle
     private fun startRadio() {
         if (!running) return
-        if (!bleSupported()) { lastError = "This phone has no Bluetooth LE"; return }
-        if (!hasPermissions()) { lastError = "Bluetooth permission not granted"; return }
-        if (adapter?.isEnabled != true) { lastError = "Bluetooth is off"; return }
+        if (!bleSupported()) { err("This phone has no Bluetooth LE"); return }
+        if (!hasPermissions()) { err("Bluetooth permission not granted"); return }
+        if (adapter?.isEnabled != true) { err("Bluetooth is off"); return }
         lastError = ""; engine.canAdvertise = advertisingWorks()
         try {
             if (server == null) openServer()
             scheduleScan(planner.allowedIn(System.currentTimeMillis()))
-        } catch (e: SecurityException) { lastError = "Permission revoked" } catch (e: Exception) { lastError = "Radio start failed: ${e.javaClass.simpleName}" }
+        } catch (e: SecurityException) { err("Permission revoked") } catch (e: Exception) { err("Radio start failed: ${e.javaClass.simpleName}") }
     }
 
     private fun stopRadio(reason: String) {
@@ -125,16 +127,16 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         // and the scan filter must match the one that carries the tag.
         val scanResp = AdvertiseData.Builder().setIncludeDeviceName(false).addServiceUuid(ParcelUuid(SERVICE)).addManufacturerData(COMPANY_ID, payload).build()
         val cb = object : AdvertiseCallback() {
-            override fun onStartSuccess(s: AdvertiseSettings) { h.post { if (adCallback === this) { advertising = true; onStatus() } } }
+            override fun onStartSuccess(s: AdvertiseSettings) { h.post { if (adCallback === this) { advertising = true; diag.count("advertiseStarts"); diag.event("advertising started (this phone can be found)"); onStatus() } } }
             override fun onStartFailure(errorCode: Int) { h.post {
                 if (adCallback !== this) return@post                  // a stale callback from an advertisement we already replaced
-                advertising = false; adState.failed(); lastError = "Advertising failed ($errorCode)"
+                advertising = false; adState.failed(); diag.count("advertiseFailures"); err("Advertising failed ($errorCode)")
                 // FEATURE_UNSUPPORTED / DATA_TOO_LARGE will not get better: act as scan-only. TOO_MANY_ADVERTISERS / INTERNAL_ERROR are retried on the next tick.
                 if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED || errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE) { advertisingBroken = true; engine.canAdvertise = false }
                 onStatus() } }
         }
         adCallback = cb
-        try { adv.startAdvertising(settings, data, scanResp, cb) } catch (e: Exception) { adCallback = null; adState.failed(); lastError = "Advertising error: ${e.javaClass.simpleName}" }
+        try { adv.startAdvertising(settings, data, scanResp, cb) } catch (e: Exception) { adCallback = null; adState.failed(); err("Advertising error: ${e.javaClass.simpleName}") }
     }
     private fun stopAdvertising() { val cb = adCallback; adCallback = null; advertising = false; cb?.let { adapter?.bluetoothLeAdvertiser?.stopAdvertising(it) } }
 
@@ -143,7 +145,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         override fun onScanResult(callbackType: Int, r: ScanResult) { val dev = r.device; val rec = r.scanRecord; h.post { onSighting(dev, rec) } }
         override fun onScanFailed(errorCode: Int) { h.post {
             if (errorCode == SCAN_FAILED_ALREADY_STARTED) return@post          // a scan is running: our flag was wrong, not the radio
-            scanning = false; lastError = "Scan failed ($errorCode)"
+            scanning = false; err("Scan failed ($errorCode)")
             if (errorCode == 6) planner.coolOff(System.currentTimeMillis(), 30_000)   // SCAN_FAILED_SCANNING_TOO_FREQUENTLY (hidden constant)
             onStatus() } }
     }
@@ -154,7 +156,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
             val now = System.currentTimeMillis()
             try {
                 refreshAdvertising()
-                if (scanNeedsLocationSwitch() && !locationSwitchOn()) { lastError = "Turn on Location in system settings: Android 6-11 needs it to find nearby Bluetooth devices"; onStatus() }
+                if (scanNeedsLocationSwitch() && !locationSwitchOn()) { err("Turn on Location in system settings: Android 6-11 needs it to find nearby Bluetooth devices"); onStatus() }
                 else {
                     val wait = planner.allowedIn(now)
                     if (wait > 0) { scheduleScan(wait); return }                // too soon after the previous start (Android throttles scan starts)
@@ -162,7 +164,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
                     startScan(planner.intensity(now))
                     h.removeCallbacks(stopScanTick); h.postDelayed(stopScanTick, planner.windowMs)
                 }
-            } catch (e: SecurityException) { lastError = "Permission revoked" } catch (e: Exception) { lastError = "Scan error: ${e.javaClass.simpleName}" }
+            } catch (e: SecurityException) { err("Permission revoked") } catch (e: Exception) { err("Scan error: ${e.javaClass.simpleName}") }
             scheduleScan(planner.periodAfterStart(now))
         }
     }
@@ -174,7 +176,8 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         val filters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build())
         // LOW_POWER samples ~0.5 s of every 5 s, so a 10 s window can see a peer once or not at all: burst windows use LOW_LATENCY instead.
         val mode = if (i == ScanPlanner.Intensity.HIGH) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER
-        sc.startScan(filters, ScanSettings.Builder().setScanMode(mode).build(), scanCb); scanning = true; planner.onScanStarted(System.currentTimeMillis(), i); onStatus()
+        sc.startScan(filters, ScanSettings.Builder().setScanMode(mode).build(), scanCb); scanning = true; planner.onScanStarted(System.currentTimeMillis(), i)
+        diag.count("scanWindows"); diag.event("scanning started (" + (if (i == ScanPlanner.Intensity.HIGH) "fast" else "slow") + " window)"); onStatus()
     }
     private fun stopScan() { if (scanning) { adapter?.bluetoothLeScanner?.stopScan(scanCb); scanning = false; onStatus() } }
     /** Call when new local data exists (a post, a reply). Callable from any thread. Opens a burst: advertise the new digest now and scan promptly and intensively. */
@@ -190,7 +193,9 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         val md = rec?.getManufacturerSpecificData(COMPANY_ID) ?: return
         if (md.size != 6) return
         val tag = md.copyOf(4); val digest = ((md[4].toInt() and 0xff) shl 8) or (md[5].toInt() and 0xff); val key = tag.hex()
-        val now = System.currentTimeMillis(); seenTags[key] = now; onStatus()
+        val now = System.currentTimeMillis(); seenTags[key] = now; diag.count("sightings")
+        if (diag.peerSeen(key)) diag.event("found a Relay phone (id ${key.take(4)})")
+        onStatus()
         if (!running || links.values.any { it.tagKey == key } || links.size >= MAX_SESSIONS) return
         val mem = memory.getOrPut(key) { Memory() }; mem.lastSeen = now
         val myDigest = engine.inventoryDigest()
@@ -205,6 +210,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
 
     private fun connect(dev: BluetoothDevice, tagKey: String, theirDigest: Int) {
         val link = Link(dev.address, tagKey, theirDigest, client = true); links[dev.address] = link
+        diag.count("connectAttempts"); diag.event("connecting to phone ${tagKey.take(4)}")
         link.gatt = dev.connectGatt(ctx, false, link.clientCb, BluetoothDevice.TRANSPORT_LE)
         h.postDelayed({ if (link.session == null && links[dev.address] === link) { memory[tagKey]?.let { it.fails++ }; link.teardown("connect timeout") } }, CONNECT_TIMEOUT_MS)
         onStatus()
@@ -226,10 +232,10 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         svc.addCharacteristic(out); server = srv; srv.addService(svc)
     }
     private val serverCb = object : BluetoothGattServerCallback() {
-        override fun onServiceAdded(status: Int, service: BluetoothGattService) { h.post { if (status == BluetoothGatt.GATT_SUCCESS) refreshAdvertising() else lastError = "Service add failed ($status)"; onStatus() } }
+        override fun onServiceAdded(status: Int, service: BluetoothGattService) { h.post { if (status == BluetoothGatt.GATT_SUCCESS) refreshAdvertising() else err("Service add failed ($status)"); onStatus() } }
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             h.post {
-                if (newState == BluetoothProfile.STATE_CONNECTED) { if (links.size >= MAX_SESSIONS) { server?.cancelConnection(device); return@post }; links[device.address] = Link(device.address, "", -1, client = false).also { it.device = device } }
+                if (newState == BluetoothProfile.STATE_CONNECTED) { if (links.size >= MAX_SESSIONS) { server?.cancelConnection(device); diag.event("refused an incoming link (already at the session limit)"); return@post }; links[device.address] = Link(device.address, "", -1, client = false).also { it.device = device }; diag.count("connectionsEstablished"); diag.event("another phone connected to us") }
                 else links[device.address]?.teardown("peer disconnected")
             }
         }
@@ -256,7 +262,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
 
         val clientCb = object : BluetoothGattCallback() {
             override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-                h.post { if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) { if (!g.requestMtu(DESIRED_MTU)) g.discoverServices() } else { if (session == null) memory[tagKey]?.let { it.fails++ }; teardown("disconnected ($status)") } }
+                h.post { if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) { diag.count("connectionsEstablished"); diag.event("connected to phone ${tagKey.take(4)}"); if (!g.requestMtu(DESIRED_MTU)) g.discoverServices() } else { if (session == null) memory[tagKey]?.let { it.fails++ }; teardown("disconnected ($status)") } }
             }
             override fun onMtuChanged(g: BluetoothGatt, m: Int, status: Int) { h.post { if (status == BluetoothGatt.GATT_SUCCESS) mtu = m; g.discoverServices() } }
             override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
@@ -277,7 +283,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
 
         fun beginSession() {
             if (session != null) return
-            val s = LinkSession(engine, this, client); session = s; touch(); s.start(); onStatus(); watchdog()
+            val s = LinkSession(engine, this, client); session = s; touch(); diag.count("sessionsStarted"); diag.event("exchange started (" + (if (client) "we called" else "they called") + ")"); s.start(); onStatus(); watchdog()
         }
         private fun touch() { lastActivity = System.currentTimeMillis() }
         private fun watchdog() {
@@ -322,12 +328,17 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         private fun finish(s: LinkSession) {
             if (done) return
             val mem = memory.getOrPut(tagKey) { Memory() }
-            if (s.closeReason == "done") { mem.fails = 0; lastContactMs = System.currentTimeMillis() } else mem.fails++
+            val st = s.stats; val okSession = s.closeReason == "done"
+            diag.count(if (okSession) "sessionsCompleted" else "sessionsFailed"); diag.count("packetsConfirmedStoredByPeer", st.sentPackets.toLong()); diag.count("packetsStoredFromPeer", st.stored.toLong())
+            diag.count("duplicatesIgnored", st.duplicates.toLong()); diag.count("packetsRejected", st.rejected.toLong()); diag.count("photosReceived", st.attachmentsDone.toLong())
+            diag.event((if (okSession) "exchange finished: " else "exchange ended early (${s.closeReason}): ") + "${st.sentPackets} of ours confirmed stored by the other phone, ${st.stored} new stored from it, ${st.duplicates} already had, ${st.rejected} rejected, ${st.attachmentsDone} photos")
+            if (okSession) { mem.fails = 0; lastContactMs = System.currentTimeMillis() } else mem.fails++
             mem.lastSession = System.currentTimeMillis(); mem.theirDigest = theirDigest; mem.myDigest = engine.inventoryDigest()
             teardown(s.closeReason ?: "closed")
         }
         fun teardown(reason: String) {
             if (done) return; done = true; links.remove(address)
+            if (session == null) { diag.count("linksClosedBeforeExchange"); diag.event("link closed before any exchange: $reason") }
             session?.let { if (!it.closed) it.close(reason) }
             try { gatt?.close() } catch (_: Exception) {}
             try { if (!client) device?.let { server?.cancelConnection(it) } } catch (_: Exception) {}

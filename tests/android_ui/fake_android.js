@@ -18,6 +18,7 @@
     attachment: function (id) { rec('attachment', arguments); return window.__drawnImage || FIX.attachments[id] || ''; },
     requestPermissions: function () { rec('requestPermissions', arguments); }, requestEnableBluetooth: function () { rec('requestEnableBluetooth', arguments); },
     openAppSettings: function () { rec('openAppSettings', arguments); }, startRelay: function () { rec('startRelay', arguments); }, stopRelay: function () { rec('stopRelay', arguments); },
+    shareDiagnostics: function () { rec("shareDiagnostics", arguments); return JSON.stringify({ ok: true, error: null }); },
     shareApp: function () { rec('shareApp', arguments); return JSON.stringify({ ok: true, sha256: 'ab'.repeat(32), bytes: 3271955, error: null }); }
   };
 })();
