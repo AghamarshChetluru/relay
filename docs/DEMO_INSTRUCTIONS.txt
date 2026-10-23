@@ -1,0 +1,57 @@
+RELAY v2.2 – DEMO INSTRUCTIONS
+Unzip relay-prototype-v2.2.zip. No internet, server or install. Open either file by double-clicking (Chrome).
+
+  index.html      The Relay mobile app (what survivors would use).   Best on a phone or a ~390px-wide window.
+  simulator.html  The Relay network simulator (explains how it works). Best on a laptop, 1280px or wider.
+
+The two pages are independent; each runs its own copy of the same routing rules (mesh.js).
+EVERYTHING IS SIMULATED: no real Bluetooth, installation, GPS, or emergency transmission.
+
+------------------------------------------------------------------
+A. THE APP (index.html) – about 3 minutes
+------------------------------------------------------------------
+1. First open: "Where are you right now?" Pick a neighbourhood (e.g. Hauz Khas). No GPS. It is stored on the phone and shown at the top.
+   Tap the area button any time to confirm or change it.
+2. Home: Request help / Help others, and what has reached this phone (nearby phones and a few messages are simulated and already arrived).
+3. Request help > Urgent assistance > "Use a demo example":
+   - "Where is help needed?": neighbourhood, street or landmark, and an optional collapsed "Exact address (kept private)".
+   - Keep it active for 30 minutes / 1 hour (default) / 2 hours. Save.  My activity: Saved -> Shared with a nearby phone -> (offer) ...
+4. Request help > Find someone > "Use a demo example": last known location (Connaught Place), approximate last contact, note, optional photo.
+   Add a photo from your computer: it is shrunk on the phone to ~10-15 KB (size shown), can be replaced or removed.
+   This request is steered toward Connaught Place (see "How routing differs" below).
+5. Volunteer side: tap (i) > "Prototype tools (for reviewers)" > "Use the app as" > "Volunteer · Lodhi Colony".
+   Help others shows what reached that phone: expiry ("Active · 23 h left"), neighbourhood, Nearby/Further away, photo, "Not verified".
+   Filters: type chips and a neighbourhood filter. Filters only change what you SEE; your phone still passes everything along.
+   Open a card > "I can help" / "Share a lead" (unverified).
+6. Back to "You": the offer arrives only after it travels back (toast). Review offer > Acknowledge, and, if you saved an exact address,
+   "Share my exact address with this volunteer" (sent only to that volunteer; other phones carry it but cannot read it).
+7. Expiry and renewal: tools > "Skip ahead 30 minutes" twice. A 30-minute request expires: volunteers see it under "Expired or resolved",
+   it stops being passed along, and My activity keeps it as "Expired" with a Renew button. Renew = new packet, same case, no duplicate cards.
+   For a missing person you can also widen the search area when updating.
+8. Location reminder: after ~30 simulated minutes (Skip ahead 30) Home shows "Are you still in Hauz Khas?" (Yes / I've moved / Not now).
+   It never appears on the Request screen or while a request is being typed. After 60 minutes unconfirmed the area chip warns it may be out of date.
+9. Community updates: Feed > Community updates > Post an update (max 280 chars). Relevant/nearby first; fades after 45 minutes.
+10. "Reset demo" in the tools restores the seeded world and keeps your area.
+
+------------------------------------------------------------------
+B. THE SIMULATOR (simulator.html) – laptop
+------------------------------------------------------------------
+Unchanged layout. 80 simulated phones in six neighbourhoods (now named Hauz Khas, Green Park, Lajpat Nagar, Vasant Vihar, Safdarjung Enclave,
+Lodhi Colony). Pick a scenario, then press the big button in the Scenario card for each step (each step is a real action on the network).
+ 1 Emergency assistance (broad propagation)   2 Missing person (now steered toward Lodhi Colony)   3 Community broadcast (+ priority comparison)
+Controls: Play, Pause, Step, Reset, Speed, message picker, zoom/pan/fit, click a phone to inspect or install Relay.
+A later update will add dedicated views of broad vs directed routing and routing efficiency.
+
+------------------------------------------------------------------
+HOW ROUTING DIFFERS BY MESSAGE TYPE (implemented in mesh.js)
+------------------------------------------------------------------
+Emergency / general help ... FLOOD: every direction, urgent first. We cannot know where a doctor is. Budgets: 60 hops, expiry, storage cap.
+Missing person ........... DIRECTED: prefers phones whose DECLARED neighbourhood is closer to the last known neighbourhood in a small
+                           offline graph of 10 Delhi areas (coarse, illustrative, not surveyed). Same-area forwarding allowed. Detours are
+                           bounded (1 detour, widening to 3 if a copy has made no progress for 16 minutes and has not reached the target).
+                           Copies that reach the target area stay in the target + adjacent areas. Per-phone fan-out budget of 3.
+                           No known target, or stale declared areas => bounded opportunistic fallback (10 hops, fan-out 3).
+Community update ......... FLOOD with lowest priority, 30-hop budget, 45-minute lifetime.
+Replies, acknowledgments, resolution notices and sealed addresses flood back (requester's area may be stale).
+Identities: Case ID (the request, stays constant), Packet ID (each request/renewal/reply/ack/resolve), Attachment ID (the photo).
+A phone stores one copy of each packet; a case shows as one card; a renewal supersedes older versions.

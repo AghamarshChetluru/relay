@@ -1,0 +1,9 @@
+<!DOCTYPE html><html><body style="margin:0;background:#fff"><script>
+var q=new URLSearchParams(location.search),W=+q.get('w')||390,Hh=+q.get('h')||844;
+var fr=document.createElement('iframe');fr.style.cssText='border:0;width:'+W+'px;height:'+Hh+'px';fr.src='file://'+q.get('src');document.body.appendChild(fr);
+fr.onload=function(){setTimeout(function(){var w=fr.contentWindow,d=w.document,M=w.Mesh,UI=w.RelayUI;
+function $(i){return d.getElementById(i)}function click(i){var e=typeof i==='string'?d.querySelector(i):i;e.click()}
+function steps(n){for(var i=0;i<n;i++)M.step()}function until(f,max){var i=0;while(!f()&&i<(max||200)){M.step();i++}}
+try{eval(q.get('js')||'')}catch(e){document.title='ERR '+e.message}
+},300)};
+</script></body></html>

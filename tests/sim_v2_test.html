@@ -1,0 +1,100 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+var q=new URLSearchParams(location.search),W=+q.get('w')||1280,HH=+q.get('h')||760,SRC=q.get('src');
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC;document.body.appendChild(fr);
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+fr.onload=function(){setTimeout(function(){run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'})},300)};
+async function run(){
+var w=fr.contentWindow,d=w.document,M=w.Mesh,errs=[];w.addEventListener('error',function(e){errs.push(e.message)});
+function Q(s){return d.querySelector(s)}function QA(s){return [].slice.call(d.querySelectorAll(s))}
+function click(s){var e=typeof s==='string'?Q(s):s;if(!e)throw new Error('missing '+s);e.click()}
+function T(s){var e=Q(s);return e?e.textContent:''}
+function S(){return M.state()}function K(){return S().keys}
+function chg(sel,v){var e=Q(sel);e.value=v;e.dispatchEvent(new w.Event('change',{bubbles:true}))}
+async function waitFor(f,ms){var t=0;while(!f()&&t<(ms||60000)){await sleep(200);t+=200}return f()}
+function pe(el,t,dx,dy){var r=el.getBoundingClientRect();el.dispatchEvent(new w.PointerEvent(t,{pointerId:1,clientX:r.left+r.width/2+(dx||0),clientY:r.top+r.height/2+(dy||0),bubbles:true}))}
+function pm(t,x,y){Q('#net').dispatchEvent(new w.PointerEvent(t,{pointerId:1,clientX:x,clientY:y,bubbles:true}))}
+function nodeXY(id){var r=Q('#net circle[data-id='+id+']').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}}
+function tap(id){var p=nodeXY(id);pm('pointerdown',p.x,p.y);pm('pointerup',p.x,p.y)}
+var vw=d.documentElement.clientWidth;
+/* ===== layout & structure ===== */
+ok(QA('#net circle.n').length===80,'canvas draws exactly 80 phones');
+ok(S().order.length===80&&QA('#net line.e').length===S().edges.length,'edges drawn = engine edges ('+S().edges.length+')');
+ok(QA('#scenario option').length===3&&/Emergency/.test(T('#scenario'))&&/Missing/.test(T('#scenario'))&&/broadcast/i.test(T('#scenario')),'three scenarios in dropdown');
+ok(d.documentElement.scrollWidth<=vw+1,'no horizontal overflow @'+vw);
+var nb=Q('#net').getBoundingClientRect();ok(nb.width>=700&&nb.height>=380,'large canvas: '+Math.round(nb.width)+'x'+Math.round(nb.height));
+['#btn-play','#btn-pause','#btn-step','#btn-reset','#scenario','#speed','#z-in','#z-out','#z-fit'].forEach(function(s){var r=Q(s).getBoundingClientRect();ok(r.width>0&&r.right<=vw+1&&r.bottom<=HH+400,'control visible: '+s)});
+ok(QA('#net text.lab').length<=3&&QA('#net text.lab').length>=0,'labels only for origin/destination/gap/selected (not 80)');
+ok(Q('#btn-play').disabled&&Q('#btn-step').disabled&&Q('#btn-pause').disabled,'before any message: Play/Step/Pause disabled');
+ok(!/Bluetooth.*connected|BLE connected/i.test(d.body.textContent)&&/no real Bluetooth/i.test(d.body.textContent),'clearly simulated; no fake hardware claims');
+ok(!d.getElementById('btn-demo')&&!QA('a').some(function(a){return /index/.test(a.getAttribute('href')||'')}),'simulator does not embed the mobile app');
+/* ===== scenario 1 ===== */
+chg('#speed','4');ok(T('#m-part')===M.participating().length+' of 80','participating count equals engine');
+click('#btn-do');var pid=S().requests[S().requests&&Object.keys(S().requests)[0]].packetId;
+ok(/Origin · My phone/.test(T('#net'))&&T('#m-held')==='1','post: origin labelled, held=1 (got held='+T('#m-held')+', tick='+S().tick+', playing='+w.RelaySim.state.playing+')');
+ok(!Q('#btn-play').disabled&&!Q('#btn-step').disabled,'Play/Step enabled once a message exists');
+var peers=M.peers(K().A);click('#btn-step');ok(T('#m-held')===String(1+peers)&&M.holders(pid).length===1+peers,'Step: exactly one hop (origin + '+peers+' neighbours) and counters match engine');
+ok(QA('#net line.e.hop').length>=1,'newest hop highlighted');
+click('#btn-do');ok(!Q('#btn-pause').disabled&&Q('#btn-play').disabled,'Play running: Pause enabled, Play disabled');
+var t0=S().tick;click('#btn-pause');await sleep(2500);ok(Q('#btn-pause').disabled&&S().tick<=t0+1,'Pause stops the clock');
+click('#btn-do');ok(await waitFor(function(){return /Stalled/.test(T('#sim-head'))},60000),'Play runs until the network stalls by itself');
+var st1=M.stats(pid);
+ok(!M.nodeHas(K().E,pid)&&T('#m-held')===String(st1.held)&&/Unreachable now/.test(T('#m-dest')),'clinic volunteer NOT reached; destination shown unreachable');
+ok(QA('#net .ring.pulse').length===1&&/Crossroads phone/.test(T('#net')),'gap phone marked');
+ok(Number(Q('#m-cut').lastChild.textContent)>0,'cut-off count shown: '+Q('#m-cut').lastChild.textContent);
+ok(S().order.every(function(i){return S().nodes[i].hasApp||!M.nodeHas(i,pid)}),'no phone without Relay holds the message');
+ok(QA('#net circle.n.off.has').length===0,'non-Relay nodes never drawn as having it');
+ok(T('#btn-do')==='Share Relay at the gap','story offers the install step');
+click('#btn-do');ok(!Q('#modalroot').hidden&&/neighbour nearby offers Relay/.test(T('#modal')),'consent dialog: neighbour offers Relay');
+click('#inst-send');ok(/Simulated file shared/.test(T('#modal'))&&!S().nodes[K().D].hasApp,'file shared but not installed yet');
+click('#inst-accept');ok(S().nodes[K().D].hasApp&&Q('#modalroot').hidden,'Accept: Crossroads phone now has Relay');
+ok(!M.nodeHas(K().E,pid)&&/Pending/.test(T('#m-dest')),'delivery not instant; destination now "pending" (route exists)');
+click('#btn-do');ok(await waitFor(function(){return M.nodeHas(K().E,pid)},60000),'subsequent hops reach the volunteer');
+ok(await waitFor(function(){return /Reached/.test(T('#m-dest'))&&!/Unreach|Pending/.test(T('#m-dest'))},5000),'destination shows Reached');
+click('#btn-do');var rp=S().packets&&Object.keys(S().packets).filter(function(k){return S().packets[k].type==='reply'})[0];
+ok(!!rp&&M.holders(rp).length===1&&M.holders(rp)[0]===K().E,'volunteer offer exists only on its author phone');
+ok(/Offer of help \(unverified\)/.test(Q('#msgpick').selectedOptions[0].textContent),'offer selected and labelled unverified');
+ok(!M.nodeHas(K().A,rp)&&/Destination · My phone/.test(T('#net')),'requester not reached yet; destination switches to requester (has='+M.nodeHas(K().A,rp)+', playing='+w.RelaySim.state.playing+', net='+T('#net').replace(/[A-Z ]{6,}/g,'').slice(0,60)+')');
+click('#btn-do');ok(await waitFor(function(){return M.nodeHas(K().A,rp)},60000),'offer physically travels back');
+click('#btn-do');var ak=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='ack'})[0];ok(!!ak,'acknowledgment packet created');
+ok(await waitFor(function(){return M.nodeHas(K().E,ak)},60000),'ack reaches the volunteer');
+ok(/Scenario complete/.test(T('#story')),'scenario 1 completes');
+var s1=Q('#story').querySelectorAll('li.done').length;ok(s1===7,'all 7 story steps ticked from engine state');
+/* numbers equal engine */
+var sel=Q('#msgpick').value;ok(T('#m-step')===String(S().tick),'minutes counter equals engine tick');
+var cov=M.coverage();ok(T('#m-groups')===cov.groups+' · '+cov.largest,'relay-group stats equal engine coverage (page '+T('#m-groups')+' vs engine '+cov.groups+' · '+cov.largest+')');
+/* device inspection + manual install + hover */
+click('#btn-reset');ok(S().tick===0&&Object.keys(S().packets).length===0&&!S().nodes[K().D].hasApp&&T('#m-part')===M.participating().length+' of 80','Reset: same seed network, no messages');
+var off=S().order.filter(function(i){return !S().nodes[i].hasApp&&M.sharers(i).length&&i!==K().D})[0];
+pm('pointermove',nodeXY(off).x,nodeXY(off).y);ok(!Q('#tip').hidden&&/No Relay/.test(T('#tip')),'hover tooltip shows device details');
+tap(off);ok(/No Relay/.test(T('#devcard'))&&!!Q('#btn-install'),'select a non-Relay phone: install button offered');
+click('#btn-install');click('#inst-send');click('#inst-accept');ok(S().nodes[off].hasApp,'manual install via selected device works');
+var on=K().B||S().order.filter(function(i){return S().nodes[i].hasApp})[0];tap(on);ok(/Relay on/.test(T('#devcard')),'select a Relay phone shows its status');
+/* zoom/pan/fit */
+var v0=Q('#net').getAttribute('viewBox').split(' ').map(Number);Q('#net').dispatchEvent(new w.WheelEvent('wheel',{deltaY:-100,clientX:600,clientY:300,bubbles:true,cancelable:true}));
+var v1=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(v1[2]<v0[2],'wheel zoom works');
+pm('pointerdown',500,300);pm('pointermove',560,340);pm('pointerup',560,340);var v2=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(v2[0]!==v1[0],'drag pans');
+click('#z-fit');var v3=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(v3[2]===1000&&v3[0]===0,'Fit restores view');
+/* ===== scenario 2 ===== */
+chg('#scenario','missing');ok(S().tick===0&&/Missing/.test(T('#story')),'switching scenario resets the world');
+click('#btn-do');click('#btn-do');ok(await waitFor(function(){return /Stalled/.test(T('#sim-head'))},60000),'missing-person request stalls at the gap');
+click('#btn-do');click('#inst-send');click('#inst-accept');click('#btn-do');var mp=Object.keys(S().requests)[0];ok(await waitFor(function(){return M.nodeHas(K().E,S().requests[mp].packetId)},60000),'reaches the phone near the clinic after install');
+click('#btn-do');var sp=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='reply'})[0];ok(S().packets[sp].payload.kind==='sighting'&&/Possible sighting \(unverified\)/.test(Q('#msgpick').selectedOptions[0].textContent),'possible sighting submitted, labelled unverified');
+click('#btn-do');ok(await waitFor(function(){return M.nodeHas(K().A,sp)},60000),'sighting returns to requester');
+ok(/Scenario complete/.test(T('#story'))&&!/found safe|is safe|alive/i.test(d.body.textContent),'scenario 2 completes; no safety claims');
+/* ===== scenario 3 ===== */
+chg('#scenario','broadcast');click('#btn-do');var bp=Object.keys(S().packets)[0];ok(S().packets[bp].type==='broadcast'&&M.holders(bp).join()===K().L,'broadcast starts on one phone (Library Quarter)');
+ok(!/Destination/.test(T('#net')),'broadcast has no single destination');
+click('#btn-do');ok(await waitFor(function(){return /Stalled/.test(T('#sim-head'))},60000),'broadcast stalls: limited by connectivity');
+ok(M.nodeHas(K().E,bp)&&M.nodeHas(K().C,bp)&&!M.nodeHas(K().A,bp)&&!M.nodeHas(K().M,bp),'reached the clinic-side group only; Old Town/Market not reached');
+var cutN=Number(Q('#m-cut').lastChild.textContent);ok(cutN>=20,'cut-off count is large before bridge ('+cutN+')');
+click('#btn-do');click('#inst-send');click('#inst-accept');click('#btn-do');ok(await waitFor(function(){return M.nodeHas(K().A,bp)},60000),'after install the broadcast crosses to Old Town');
+click('#btn-do');ok(!!Q('#m-priority'),'priority comparison appears from engine numbers');
+var upid=S().packets&&Object.keys(S().packets).filter(function(k){return S().packets[k].type==='request'})[0];var bc2=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='broadcast'&&k!==bp})[0];
+click('#btn-step');var nbr=S().adj[K().L].filter(M.canRelay);ok(nbr.some(function(i){return M.nodeHas(i,upid)&&!M.nodeHas(i,bc2)}),'one step later urgent request has moved on links where the update still waits');
+chg('#msgpick',bc2);ok(/Community update/.test(T('#numbers'))&&/Lowest priority/.test(T('#m-prio')),'update labelled lowest priority');
+/* ===== performance ===== */
+var t=performance.now();click('#btn-reset');chg('#scenario','emergency');click('#btn-do');for(var i=0;i<30;i++)click('#btn-step');var ms=performance.now()-t;ok(ms<4000,'30 steps incl. repaint in '+Math.round(ms)+'ms');
+ok(errs.length===0,'no runtime errors: '+errs.join(';'));
+}
+</script></body></html>

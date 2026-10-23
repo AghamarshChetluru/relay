@@ -1,0 +1,218 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+var q=new URLSearchParams(location.search),W=+q.get('w')||390,HH=+q.get('h')||844,SRC=q.get('src'),AUTO=q.get('auto')==='1';
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC+(AUTO?'':'?manual=1');document.body.appendChild(fr);
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+fr.onload=function(){setTimeout(function(){(AUTO?runAuto():run()).catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+(AUTO?' auto':'')+'\n'+out.join('\n')+'\nEND'})},300)};
+function mk(){
+ var w=fr.contentWindow,d=w.document,M=w.Mesh,errs=[];w.addEventListener('error',function(e){errs.push(e.message)});
+ var X={w:w,d:d,M:M,errs:errs};
+ X.Q=function(s){return d.querySelector(s)};X.QA=function(s){return [].slice.call(d.querySelectorAll(s))};
+ X.click=function(s){var e=typeof s==='string'?X.Q(s):s;if(!e)throw new Error('missing '+s);e.click()};
+ X.setv=function(s,v){var e=X.Q(s);if(!e)throw new Error('missing '+s);e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}));e.dispatchEvent(new w.Event('change',{bubbles:true}))};
+ X.txt=function(){return d.getElementById('screen').textContent};X.sheet=function(){return d.getElementById('sheetbody').textContent};
+ X.btn=function(t,root){return X.QA((root||'body')+' button').find(function(b){return b.textContent.trim().indexOf(t)===0})};
+ X.vis=function(e){var r=e.getBoundingClientRect(),cs=w.getComputedStyle(e);return r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none'};
+ X.K=function(){return M.state().keys};
+ X.openTools=function(){if(d.getElementById('sheetroot').hidden)X.click('#btn-info');var det=X.Q('#demo-tools');if(!det.open){det.open=true;det.dispatchEvent(new w.Event('toggle'))}};
+ X.persona=function(k){X.openTools();X.click('.persona[data-persona='+k+']')};
+ X.skip=function(n){var t=n;while(t>=30){X.openTools();X.click('#tool-skip30');t-=30}while(t>=10){X.openTools();X.click('#tool-skip');t-=10}if(!d.getElementById('sheetroot').hidden)X.click('#sheet-close')};
+ X.layout=function(tag){
+  var vw=d.documentElement.clientWidth,bad=[],small=[],fonts=[],sh=!d.getElementById('sheetroot').hidden;
+  var scope=sh?d.getElementById('sheet'):d.getElementById('appview'),sr=scope.getBoundingClientRect();
+  [].forEach.call(scope.querySelectorAll('*'),function(e){
+   if(e.closest('svg')&&e.tagName!=='svg')return;if(!X.vis(e))return;var r=e.getBoundingClientRect();
+   if(r.right>sr.right+1.5||r.left<sr.left-1.5)bad.push(e.tagName+'.'+(typeof e.className==='string'?e.className:'')+'@'+Math.round(r.left)+'-'+Math.round(r.right));
+   if(e.matches('button,select,input:not(.sr),textarea,summary')){if(r.height<43.5||(e.tagName==='BUTTON'&&r.width<43.5))small.push((e.id||e.className||e.textContent.slice(0,12))+':'+Math.round(r.width)+'x'+Math.round(r.height))}
+   if(e.matches('input[type=text],textarea,select')&&parseFloat(w.getComputedStyle(e).fontSize)<16)fonts.push(e.id);
+  });
+  ok(d.documentElement.scrollWidth<=vw+1&&bad.length===0,tag+': no horizontal overflow ('+d.documentElement.scrollWidth+'/'+vw+') '+bad.slice(0,3).join(' | '));
+  ok(small.length===0,tag+': touch targets >=44px '+small.slice(0,4).join(' | '));
+  ok(fonts.length===0,tag+': inputs >=16px '+fonts.join(','));
+ };
+ X.makeImage=function(wd,ht,noisy){return new Promise(function(res){var cv=d.createElement('canvas');cv.width=wd;cv.height=ht;var c=cv.getContext('2d');var g=c.createLinearGradient(0,0,wd,ht);g.addColorStop(0,'#cdb79e');g.addColorStop(1,'#5a6f89');c.fillStyle=g;c.fillRect(0,0,wd,ht);
+  c.fillStyle='#e8c9a8';c.beginPath();c.ellipse(wd/2,ht*.42,wd*.16,ht*.22,0,0,7);c.fill();c.fillStyle='#2b2b2b';c.beginPath();c.arc(wd*.45,ht*.38,wd*.015,0,7);c.arc(wd*.55,ht*.38,wd*.015,0,7);c.fill();c.fillStyle='#8a4b3c';c.fillRect(wd*.46,ht*.5,wd*.08,ht*.01);
+  if(noisy){var im=c.getImageData(0,0,wd,ht);for(var i=0;i<im.data.length;i+=4){var n=(Math.random()-.5)*160;im.data[i]+=n;im.data[i+1]+=n;im.data[i+2]+=n}c.putImageData(im,0,0)}
+  cv.toBlob(function(b){res(new w.File([b],'photo.jpg',{type:'image/jpeg'}))},'image/jpeg',0.95)})};
+ X.pick=function(file){var dt=new w.DataTransfer();dt.items.add(file);var inp=X.Q('#photo-input');inp.files=dt.files;inp.dispatchEvent(new w.Event('change',{bubbles:true}))};
+ X.until=function(f,max){var i=0;while(!f()&&i<(max||200)){X.M.step();i++}return i};
+ return X;
+}
+async function runAuto(){
+ var X=mk(),d=X.d,M=X.M,K=X.K();
+ await sleep(500);
+ if(X.Q('#onboarding')){X.click('.chip[data-hood=HK]');X.click('#ob-continue')}
+ X.click('[data-nav=request]');X.click('#btn-example');X.click('#req-submit');
+ ok(/Saved on this phone/.test(X.txt()),'auto: request saved');X.click('#done-activity');
+ await sleep(7000);
+ ok(/Shared with a nearby phone/.test(X.txt()),'auto: quiet transport shares it with a nearby phone with no user action');
+ X.click('[data-nav=request]');X.click('#btn-example');var ta=X.Q('#f-text');ta.focus();ta.value='typing in progress';ta.dispatchEvent(new X.w.Event('input',{bubbles:true}));
+ await sleep(6000);ok(d.activeElement===X.Q('#f-text')&&X.Q('#f-text').value==='typing in progress','auto: background delivery does not steal focus or erase typing');
+ ok(X.errs.length===0,'auto: no runtime errors');
+}
+async function run(){
+ var X=mk(),w=X.w,d=X.d,M=X.M,Q=X.Q,QA=X.QA,click=X.click,setv=X.setv,txt=X.txt,sheet=X.sheet,btn=X.btn,K=X.K(),layout=X.layout,persona=X.persona,skip=X.skip;
+ var A=K.A,E=K.E;var LONG=new Array(25).join('Wxyzqabcde');
+ function S(){return M.state()}
+ function cases(v){return M.receivedCases(v)}
+ /* ===== 1. onboarding: manual neighbourhood, no GPS ===== */
+ ok(!!Q('#onboarding')&&/Where are you right now/.test(txt())&&/No GPS needed/.test(txt()),'first run: asks for neighbourhood, states no GPS');
+ ok(d.body.classList.contains('onboarding')&&!X.vis(Q('.bottomnav')),'onboarding hides navigation (lightweight, one decision)');
+ ok(QA('#onboarding .chip[data-hood]').length===11&&['Hauz Khas','Connaught Place','Green Park','Safdarjung Enclave','Vasant Vihar','Ber Sarai','Jia Sarai'].every(function(n){return txt().indexOf(n)>=0}),'onboarding offers the neighbourhoods from the brief + "Somewhere else"');
+ ok(!w.navigator.geolocation||!/geolocation/i.test(w.document.documentElement.outerHTML.replace(/navigator\.geolocation/,'')),'no geolocation API used by the page');
+ layout('onboarding');
+ click('#ob-continue');ok(/Choose where you are/.test(txt())&&!!Q('#onboarding'),'continue without a choice shows an error');
+ click('.chip[data-hood=other]');click('#ob-continue');ok(/Type your area/.test(txt()),'"Somewhere else" needs text');
+ click('.chip[data-hood=HK]');click('#ob-continue');
+ ok(!Q('#onboarding')&&S().nodes[A].hood==='HK'&&/Hauz Khas/.test(Q('#area-chip').textContent),'area saved: shown in the top bar');
+ ok((function(){try{return JSON.parse(w.localStorage.getItem('relay.area')).id==='HK'}catch(e){return false}})(),'area stored locally on the phone');
+ layout('home after onboarding');
+ /* ===== 2. update area manually ===== */
+ click('#area-chip');ok(/Your area/.test(d.getElementById('sheet-title').textContent)&&/Hauz Khas/.test(sheet()),'area sheet opens from the top bar');layout('area sheet');
+ click('.chip[data-area=CP]');click('#area-save');ok(S().nodes[A].hood==='CP'&&/Connaught Place/.test(Q('#area-chip').textContent),'user can update neighbourhood manually (Connaught Place)');
+ click('#area-chip');click('.chip[data-area=other]');setv('#area-other','Near the old fort gate');click('#area-save');ok(S().nodes[A].hood===null&&/Near the old fort gate/.test(Q('#area-chip').textContent),'free-text area accepted');
+ click('#area-chip');click('.chip[data-area=HK]');click('#area-save');ok(S().nodes[A].hood==='HK','back to Hauz Khas');
+ /* ===== 3. location confirmation reminder ===== */
+ click('[data-nav=home]');ok(!Q('#loc-prompt'),'no reminder right after confirming');
+ skip(20);click('[data-nav=home]');ok(!Q('#loc-prompt'),'no reminder at ~20 simulated minutes');
+ skip(10);click('[data-nav=home]');var ag=M.hoodState(A).age;ok(ag>=30&&!!Q('#loc-prompt')&&/Are you still in Hauz Khas\?/.test(Q('#loc-prompt').textContent),'after ~30 simulated minutes: "Are you still in Hauz Khas?" (age '+ag+')');
+ ok(['Yes, still here','I’ve moved — Update area','Not now'].every(function(t){return Q('#loc-prompt').textContent.indexOf(t)>=0}),'reminder offers the three options');layout('reminder');
+ click('[data-nav=request]');click('#btn-example');click('[data-nav=home]');ok(!Q('#loc-prompt'),'reminder does NOT interrupt someone with a request in progress (draft present)');
+ click('[data-nav=request]');ok(!Q('#loc-prompt'),'no reminder on the request screen');
+ click('[data-nav=home]');
+ /* clear draft: reload form by discarding */
+ w.RelayUI.ui.form=null;w.RelayUI.ui.form={mode:'urgent',cat:'Medical',text:'',hood:'HK',hoodOther:'',where:'',building:'',directions:'',addrOpen:false,urgency:'urgent',validity:60,who:'',desc:'',lastHood:'HK',lastHoodOther:'',lastWhere:'',lastContact:'Not sure',note:'',photo:null,photoBusy:false,photoErr:'',errors:{}};
+ click('[data-nav=feed]');click('[data-nav=home]');ok(!!Q('#loc-prompt'),'reminder returns once no request is in progress');
+ click('#loc-later');ok(!Q('#loc-prompt'),'"Not now" hides it');skip(10);click('[data-nav=home]');ok(!!Q('#loc-prompt'),'"Not now" snoozes ~10 minutes, then it asks again');
+ click('#loc-moved');ok(/Your area/.test(d.getElementById('sheet-title').textContent),'"I\'ve moved" opens the area update');click('#sheet-close');
+ click('#loc-yes');ok(M.hoodState(A).age===0&&!Q('#loc-prompt'),'"Yes, still here" confirms (last-confirmed time reset)');
+ skip(70);click('[data-nav=home]');ok(!M.hoodState(A).reliable&&/!/.test(Q('#area-chip').textContent)&&Q('#area-chip').className.indexOf('stale')>=0,'unconfirmed for >60 min: area flagged as possibly out of date');
+ click('#area-chip');click('#area-confirm');ok(M.hoodState(A).reliable,'confirm from the area sheet restores it');
+ /* ===== 4. urgent form: location fields, privacy, validity ===== */
+ click('[data-nav=request]');
+ ok(/Where is help needed\?/.test(txt())&&!/Where should someone look/.test(txt()),'emergency form says "Where is help needed?" (old wording gone)');
+ ok(Q('#f-hood').value==='HK'&&!!Q('#f-where')&&!!Q('#addr-details'),'neighbourhood defaults to my area; landmark field; exact-address section');
+ ok(!Q('#addr-details').open&&/kept private/.test(Q('#addr-details').textContent),'exact address is collapsed and labelled private');
+ ok(QA('.chip[data-validity]').map(function(c){return c.textContent}).join()==='30 minutes,1 hour,2 hours'&&Q('.chip[data-validity="60"]').getAttribute('aria-pressed')==='true','validity options 30 min / 1 hour (default) / 2 hours');
+ layout('urgent form');
+ click('#req-submit');ok(QA('.err[role=alert]').length===2&&!!Q('#f-text')&&d.activeElement.id==='f-text','empty form: text + landmark errors, focus on first');
+ click('.chip[data-urg=general]');ok(!QA('.chip[data-validity]').length&&/6 hours/.test(txt()),'general help: fixed 6 h policy, no urgent validity chips');click('.chip[data-urg=urgent]');
+ click('.chip[data-validity="30"]');setv('#f-text','Elderly neighbour collapsed. Needs a doctor.');setv('#f-where','Gate 2, Sunder Lane');
+ Q('#addr-details').open=true;Q('#addr-details').dispatchEvent(new w.Event('toggle'));setv('#f-building','Flat 4B, Block C');setv('#f-directions','Blue gate, 2nd floor');
+ click('#req-submit');
+ var rid1=Object.keys(S().requests).filter(function(r){return S().requests[r].authorNodeId===A})[0],p1=S().requests[rid1].packetId,pk1=S().packets[p1];
+ ok(/Saved on this phone/.test(txt())&&pk1.payload.validity===30&&pk1.expiresTick===S().tick+30&&pk1.payload.area==='Gate 2, Sunder Lane'&&pk1.payload.areaHood==='HK','urgent request saved with 30-minute validity, landmark and neighbourhood');
+ ok(pk1.payload.hasPrivate===true&&JSON.stringify(S().packets).indexOf('Flat 4B')<0&&JSON.stringify(S().requests).indexOf('Flat 4B')<0,'exact address is NOT in any outgoing packet (only a flag)');
+ ok(/stays active for 30 min/.test(txt()),'confirmation states the validity period');layout('saved');
+ /* ===== 5. missing-person form + photo ===== */
+ click('#done-activity');click('[data-nav=request]');click('#mode-missing');
+ ok(/Who are you looking for\?/.test(txt())&&/Description or identifying details/.test(txt())&&/Last known location/.test(txt())&&!/Last seen near/.test(txt())&&/Approximate last contact \(optional\)/.test(txt())&&/Short note \(optional\)/.test(txt())&&/Photo \(optional\)/.test(txt()),'missing-person form has the required fields and wording');layout('missing form');
+ click('#req-submit');ok(QA('.err[role=alert]').length===2,'missing form validates who + landmark');
+ setv('#f-who','Meera, my daughter, 8');setv('#f-desc','Red school bag, blue uniform, short black hair.');setv('#f-lasthood','CP');setv('#f-lastwhere','Near the metro gate, Block F');setv('#f-contact','Earlier today');setv('#f-note','With her school group.');
+ var img=await X.makeImage(1200,900,false);X.pick(img);
+ var okp=false;for(var t=0;t<400&&!okp;t++){await sleep(100);okp=!!Q('#photo-preview')}
+ ok(okp,'photo selected: compressed preview shown');
+ var info=Q('#photo-size')?Q('#photo-size').textContent:'';var bytes=Math.round(parseFloat(info)*1024);
+ ok(/KB/.test(info)&&bytes>2000&&bytes<=15500,'final file size shown and within ~10-15 KB target ('+info+')');layout('photo selected');
+ var pv=Q('#photo-preview img');var loaded=await new Promise(function(r){var im=new w.Image();im.onload=function(){r([im.naturalWidth,im.naturalHeight])};im.onerror=function(){r(null)};im.src=pv.src});
+ ok(loaded&&loaded[0]>=224&&loaded[1]>=168&&/^data:image\/jpeg/.test(pv.src),'compressed image is a real JPEG, still >=224px on its long side ('+(loaded&&loaded.join('x'))+')');
+ click('#photo-remove');ok(!Q('#photo-preview')&&!!Q('#photo-btn'),'photo can be removed');
+ var img2=await X.makeImage(900,1200,true);X.pick(img2);okp=false;for(t=0;t<400&&!okp;t++){await sleep(100);okp=!!Q('#photo-preview')}
+ var info2=Q('#photo-size')?Q('#photo-size').textContent:'';ok(okp&&/KB/.test(info2),'photo can be replaced; a hard-to-compress noisy photo still works ('+info2+(/over 15 KB/.test(txt())?', kept readable, flagged as over target':'')+')');
+ ok(!!Q('#photo-replace'),'Replace button offered');var img3=await X.makeImage(800,600,false);X.pick(img3);okp=false;for(t=0;t<400&&!okp;t++){await sleep(100);okp=!!Q('#photo-preview')}ok(okp,'replace flow works');
+ click('#req-submit');
+ var rid2=Object.keys(S().requests).filter(function(r){return S().requests[r].kind==='missing'&&S().requests[r].authorNodeId===A})[0],p2=S().requests[rid2].packetId,pk2=S().packets[p2];
+ ok(pk2.route.policy==='directed'&&pk2.route.targets.join()==='CP'&&pk2.payload.lastKnown.indexOf('Connaught Place')>0&&pk2.payload.lastContact==='Earlier today'&&pk2.expiresTick===S().tick+1440,'missing request: directed toward Connaught Place, last known location + contact stored, 24 h policy');
+ var aid=pk2.payload.attachmentId,att=S().attachments[aid];ok(!!att&&att.caseId===rid2&&S().packets[att.packetId].prio>=S().packets[p2].prio&&att.bytes<=15500,'photo kept as an attachment (own ID) tied to the case; lower priority than the text packet');
+ click('#done-activity');click(btn('Open request'));ok(!!Q('#sheet figure.bigphoto img')&&/Last known location/.test(sheet())&&/Connaught Place/.test(sheet())&&/Earlier today/.test(sheet()),'my request shows the photo, last known location and last contact');layout('missing request sheet');click('#sheet-close');
+ /* ===== 6. broad emergency vs directed missing in the app world ===== */
+ var nUrgent=M.holders(p1).length;
+ S().opts.autoConfirm=true;
+ var u0=S().tick;until=X.until;
+ X.until(function(){return M.nodeHas(E,p1)},80);ok(M.nodeHas(E,p1),'emergency request travelled across neighbourhoods to a volunteer in Lodhi Colony (broad propagation)');
+ var seenHoods={};M.holders(p1).forEach(function(i){seenHoods[S().nodes[i].hood]=1});ok(Object.keys(seenHoods).length>=5,'emergency request is held in many neighbourhoods ('+Object.keys(seenHoods).length+'), not just the requester\'s');
+ X.until(function(){return M.holders(p2).some(function(i){return S().nodes[i].hood==='CP'})},120);
+ ok(M.holders(p2).some(function(i){return S().nodes[i].hood==='CP'}),'missing-person request reached phones declared in Connaught Place');
+ X.until(function(){return M.nodeHas(E,S().attachments[aid].packetId)},120);
+ /* ===== 7. feed: relevance, validity, photo, address badge ===== */
+ persona('E');click('[data-nav=feed]');
+ var ec=QA('#screen .card[data-rid]');ok(ec.length>=2,'volunteer feed lists received requests ('+ec.length+')');
+ var c1=ec.filter(function(c){return /collapsed/.test(c.textContent)})[0];
+ ok(!!c1&&/Active · \d+ min left/.test(c1.textContent)&&/Urgent · Medical/.test(c1.textContent)&&/Not verified/.test(c1.textContent)&&/Exact address on request/.test(c1.textContent),'card: type, urgency, validity left, "Not verified", exact-address-on-request badge');
+ ok(/Gate 2, Sunder Lane/.test(c1.textContent)&&/Hauz Khas/.test(c1.textContent)&&/(Nearby|Further away)/.test(c1.textContent)&&/(min ago|just now|h ago)/.test(c1.textContent),'card: reported area, neighbourhood, proximity, age');
+ var c2=ec.filter(function(c){return /Meera/.test(c.textContent)})[0];ok(!!c2&&/Photo/.test(c2.textContent)&&/Sighting reports unverified/.test(c2.textContent)&&!/Exact address/.test(c2.textContent),'missing card: photo tag + sightings unverified');
+ ok(!!c2.querySelector('img.thumb')&&c2.querySelector('img.thumb').src.indexOf('data:image/jpeg')===0,'compressed photo displays on the RECEIVED request card');
+ click(c2.querySelector('.link'));ok(!!Q('#sheet figure.bigphoto img')&&/Photo from the requester/.test(sheet())&&/Search area/.test(sheet())&&/Connaught Place/.test(sheet()),'received request sheet: photo + last known location + search area');layout('received missing sheet');click('#sheet-close');
+ var seedArjun=ec.filter(function(c){return /Arjun/.test(c.textContent)})[0];ok(!seedArjun||!!seedArjun.querySelector('img.thumb')||/Photo on the way/.test(seedArjun.textContent),'seeded missing-person case shows its photo or "on the way"');
+ click('.chip[data-filter=Missing]');ok(QA('#screen .card[data-rid]').every(function(c){return /Looking for/.test(c.textContent)}),'category filter: Missing');click('.chip[data-filter=All]');
+ var det=Q('#screen details');det.open=true;setv('#f-area','CP');ok(QA('#screen .card[data-rid]').length>=1&&QA('#screen .card[data-rid]').every(function(c){return /Connaught Place/.test(c.textContent)}),'neighbourhood filter uses the REPORTED neighbourhood (Connaught Place)');setv('#f-area','All');
+ /* filters do not change forwarding */
+ var inboxBefore=Object.keys(S().inbox[E]).sort().join();click('.chip[data-filter=Missing]');var beforeHold=M.holders(p1).length;skip(10);var afterHold=M.holders(p1).length;
+ ok(Object.keys(S().inbox[E]).sort().join().indexOf(p1)>=0&&afterHold>=beforeHold,'filtering the feed never stops this phone holding/relaying other requests (E holds the medical request while filtering Missing)');click('.chip[data-filter=All]');
+ /* ===== 8. expiry, expired status, renewal, no duplicate cards ===== */
+ /* a fresh 30-minute request, checked right after it expires (relay caches drop expired copies after a 30-minute grace period) */
+ persona('A');click('[data-nav=request]');click('#mode-urgent');click('.chip[data-cat=Rescue]');click('.chip[data-validity="30"]');setv('#f-text','Water pipe burst on the first floor. Need help to stop it.');setv('#f-where','Sector 5 lane 3');click('#req-submit');
+ var rid3=Object.keys(S().requests).filter(function(r){return S().requests[r].authorNodeId===A&&S().requests[r].title.indexOf('Rescue')===0})[0],p3=S().requests[rid3].packetId;
+ X.until(function(){return M.nodeHas(E,p3)},80);ok(M.nodeHas(E,p3),'precondition: volunteer holds the 30-minute request');
+ persona('E');click('[data-nav=feed]');ok(QA('#screen > div > .card[data-rid="'+rid3+'"]').length===1&&/Active · \d+ min left/.test(QA('#screen .card[data-rid="'+rid3+'"]')[0].textContent),'while valid it is an active need with minutes left');
+ X.until(function(){return M.isExpired(S().packets[p3])},60);skip(2);persona('E');click('[data-nav=feed]');
+ ok(M.isExpired(S().packets[p3])&&QA('#screen > div > .card[data-rid="'+rid3+'"]').length===0,'expired request is no longer listed among active needs');
+ var earlier=Q('#earlier');ok(!!earlier&&/Expired or resolved/.test(earlier.textContent),'expired and resolved live in a separate "Expired or resolved" section');
+ earlier.open=true;earlier.dispatchEvent(new w.Event('toggle'));var ex=QA('#earlier .card[data-rid="'+rid3+'"]')[0];
+ ok(!!ex&&ex.getAttribute('data-state')==='expired'&&/Expired/.test(ex.textContent)&&!ex.querySelector('.link'),'expired card is visibly distinct, has an Expired badge and no "I can help" action');layout('earlier section');
+ var holdAtExp=M.holders(p3).length;skip(10);ok(M.holders(p3).length<=holdAtExp,'expired packet is no longer forwarded (holders did not grow)');
+ skip(M.EVICT_GRACE);ok(!M.nodeHas(E,p3)&&M.nodeHas(A,p3),'after the grace period relay caches drop it, but the requester keeps it');
+ persona('A');click('[data-nav=activity]');var m3=QA('#screen article[data-rid="'+rid3+'"]')[0];ok(!!m3&&/Expired/.test(m3.textContent)&&!!m3.querySelector('[data-act=renew]'),'requester: expired case stays in My activity with status Expired + Renew');
+ ok(M.isExpired(S().packets[p1]),'the 30-minute emergency from earlier has expired too');
+ persona('A');click('[data-nav=activity]');
+ var mine=QA('#screen article[data-rid]').filter(function(c){return c.getAttribute('data-rid')===rid1})[0];
+ ok(!!mine&&/Expired/.test(mine.textContent)&&!!mine.querySelector('[data-act=renew]'),'requester: case kept in My activity with status Expired + Renew button');
+ click(mine.querySelector('[data-act=renew]'));ok(/Renew request/.test(d.getElementById('sheet-title').textContent)&&/same request/.test(sheet()),'renew sheet explains it updates the same request');layout('renew sheet');
+ var reqCountBefore=Object.keys(S().requests).length;click('.chip[data-validity="120"]');setv('#rn-desc','Still needs a doctor. Now in the courtyard.');click('#rn-submit');
+ var vers=S().requests[rid1].versions;ok(vers.length===2&&vers[1]!==p1&&S().packets[vers[1]].caseId===rid1&&S().packets[vers[1]].version===1&&S().packets[vers[1]].payload.validity===120,'renewal: new packet id, SAME case, version 1, 2 h validity');
+ ok(Object.keys(S().requests).length===reqCountBefore,'renewal did not create a second case');
+ click('[data-nav=activity]');ok(QA('#screen article[data-rid="'+rid1+'"]').length===1&&/Renewed/.test(txt())&&!/Expired/.test(QA('#screen article[data-rid="'+rid1+'"]')[0].querySelector('.pill.warn')?QA('#screen article[data-rid="'+rid1+'"]')[0].querySelector('.pill.warn').textContent:''),'My activity: one card, now active and marked renewed');
+ X.until(function(){return M.nodeHas(E,vers[1])},100);var both=S().order.filter(function(i){return M.nodeHas(i,p1)&&M.nodeHas(i,vers[1])});
+ persona('E');click('[data-nav=feed]');var cards=QA('#screen .card[data-rid="'+rid1+'"]');ok(cards.length===1&&/Renewed/.test(cards[0].textContent)&&cards[0].getAttribute('data-state')==='active'&&/updated|Courtyard|courtyard/i.test(cards[0].textContent),'volunteer sees ONE active, renewed card with the updated text (no duplicate for old+new packet)');
+ ok(both.every(function(i){return M.receivedCases(i).filter(function(c){return c.id===rid1}).length===1}),'every phone holding both packets shows a single case ('+both.length+' checked)');
+ /* distinct replies */
+ click(cards[0].querySelector('.link'));setv('#r-note','I can come now with a first-aid kit.');setv('#r-area','Gate 2');click('#r-submit');click('#sheet-close');
+ persona('C');click('[data-nav=feed]');var cc=QA('#screen .card[data-rid="'+rid1+'"]');
+ if(!cc.length){X.until(function(){return M.nodeHas(K.C,vers[1])},60);persona('C');click('[data-nav=feed]');cc=QA('#screen .card[data-rid="'+rid1+'"]')}
+ click(cc[0].querySelector('.link'));setv('#r-note','I am a retired nurse nearby, can help too.');click('#r-submit');click('#sheet-close');
+ var replies=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='reply'&&S().packets[k].requestId===rid1});
+ ok(replies.length===2,'two volunteers => two distinct reply packets');
+ X.until(function(){return replies.every(function(r){return M.nodeHas(A,r)})},120);skip(10);persona('A');click('[data-nav=activity]');click(btn('Review offer'));
+ ok(QA('#sheet .offer[data-pid]').length===2&&/first-aid kit/.test(sheet())&&/retired nurse/.test(sheet()),'requester sees both offers as separate cards, labelled unverified');layout('two offers');
+ /* ===== 9. exact address shared intentionally ===== */
+ var shareBtns=QA('#sheet [data-act=share-address]');ok(shareBtns.length===2,'"Share my exact address with this volunteer" offered per offer');
+ var firstReply=QA('#sheet .offer[data-pid]').filter(function(o){return /first-aid/.test(o.textContent)})[0];click(firstReply.querySelector('[data-act=share-address]'));
+ ok(/Exact address sent to this volunteer only/.test(QA('#sheet .offer[data-pid]').filter(function(o){return /first-aid/.test(o.textContent)})[0].textContent)&&QA('#sheet [data-act=share-address]').length===1,'address shared with one volunteer only; button gone for that offer');
+ click('#sheet-close');
+ persona('E');click('[data-nav=activity]');click(btn('Open request'));ok(!/Flat 4B/.test(sheet())&&/Available\. The requester can share it/.test(sheet()),'volunteer sees "address available on request", not the address, before it arrives');click('#sheet-close');
+ var addrPid=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='address'})[0];X.until(function(){return M.nodeHas(E,addrPid)},100);
+ persona('E');click('[data-nav=activity]');click(btn('Open request'));ok(/Flat 4B, Block C/.test(sheet())&&/Blue gate/.test(sheet())&&/shared with you by the requester/.test(sheet()),'addressed volunteer reads the exact address after it travels back');layout('address shared');click('#sheet-close');
+ persona('C');click('[data-nav=activity]');click(btn('Open request'));ok(!/Flat 4B/.test(sheet()),'the other volunteer cannot see the exact address');click('#sheet-close');
+ /* ===== 10. ack + resolve still work ===== */
+ persona('A');click('[data-nav=activity]');click(btn('Review offer')||btn('Open request'));click('#sheet [data-act=ack]');ok(/Acknowledged on this phone/.test(sheet()),'acknowledgment still works');
+ click('#btn-resolve');click('#sheet-close');click('[data-nav=activity]');ok(/Resolved on this phone|Marked resolved/.test(txt()),'resolution still works');
+ var rsv=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='resolve'})[0];X.until(function(){return M.nodeHas(E,rsv)},100);persona('E');click('[data-nav=feed]');var e2=Q('#earlier');if(e2){e2.open=true}
+ ok(QA('#earlier .card[data-rid="'+rid1+'"]').some(function(c){return c.getAttribute('data-state')==='resolved'&&/Resolved/.test(c.textContent)}),'resolved case moves to "Expired or resolved" on phones that received the notice');
+ /* ===== 11. renew / widen search for missing person ===== */
+ persona('A');click('[data-nav=activity]');var mcard=QA('#screen article[data-rid]').filter(function(c){return c.getAttribute('data-rid')===rid2})[0];click(mcard.querySelector('button.soft, button.primary:not([data-act=renew])')||mcard.querySelector('button'));
+ click('#btn-renew');ok(/Update missing-person request/.test(d.getElementById('sheet-title').textContent)&&QA('.chip[data-target]').length===10&&Q('.chip[data-target=CP]').getAttribute('aria-pressed')==='true','missing-person update lets me widen the search area (CP preselected)');layout('widen search');
+ click('.chip[data-target=LC]');click('.chip[data-target=CK]');click('#rn-submit');var mv=S().requests[rid2].versions;ok(mv.length===2&&S().packets[mv[1]].route.targets.sort().join()==='CK,CP,LC'&&S().packets[mv[1]].payload.attachmentId===aid,'widened search area is a renewal of the same case; photo attachment reused');
+ ok(Object.keys(S().attachments).filter(function(k){return S().attachments[k].caseId===rid2}).length===1,'no second copy of the photo');
+ /* ===== 12. neighbourhood-aware feed + community relevance ===== */
+ persona('M');click('[data-nav=feed]');click('#seg-updates');click('#btn-post');setv('#c-text','Tea and biscuits at the Green Park community hall.');click('.chip[data-bc="Resources"]');setv('#c-area','Community hall');click('#c-submit');var upid=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='broadcast'&&/Tea and biscuits/.test(S().packets[k].payload.text)})[0];
+ X.until(function(){return M.nodeHas(A,upid)},60);persona('A');click('#area-chip');click('#area-confirm');click('[data-nav=feed]');click('#seg-updates');var upd=QA('#screen .card[data-pid]');ok(upd.length>=1&&upd.every(function(c){return /(Nearby|Further away)/.test(c.textContent)&&/relevant for \d+ min/.test(c.textContent)}),'community updates show area, proximity and remaining relevance');layout('updates');
+ /* ===== 13. per-phone boundaries incl. earlier section ===== */
+ var allOk=true,det2=[];['A','M','S','L','C','E'].forEach(function(k){persona(k);click('[data-nav=feed]');click('#seg-requests');var vcs=M.receivedCases(K[k]).filter(function(c){return !S().local[K[k]].hidden[c.id]});var shown=QA('#screen .card[data-rid]').length;
+  if(shown!==vcs.length){allOk=false;det2.push(k+':'+shown+'/'+vcs.length)}
+  S().order.filter(function(i){return i!==K[k]}).length;Object.keys(S().requests).forEach(function(rid){if(!M.nodeHas(K[k],S().requests[rid].packetId)&&!S().requests[rid].versions.some(function(p){return M.nodeHas(K[k],p)})&&QA('#screen .card[data-rid="'+rid+'"]').length)allOk=false})});
+ ok(allOk,'every phone lists exactly the cases in its own inbox (active + earlier), never others '+det2.join(' '));
+ /* ===== 14. reset ===== */
+ persona('A');X.openTools();click('#demo-reset');ok(S().tick===16&&/Hauz Khas/.test(Q('#area-chip').textContent)&&!Q('#onboarding'),'reset restores the seeded world and keeps my declared area');click('#sheet-close');
+ ok(X.errs.length===0,'no runtime errors: '+X.errs.join(';'));
+}
+</script></body></html>

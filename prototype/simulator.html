@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay network simulator (prototype)</title>
+<link rel="stylesheet" href="sim.css">
+</head>
+<body class="simpage">
+<header class="bar">
+  <div class="brand"><span class="mark" id="mark" aria-hidden="true"></span><div><strong>relay.</strong><small>Network simulator · simulation only</small></div></div>
+  <label class="ctl">Scenario <select id="scenario" aria-label="Demonstration scenario"></select></label>
+  <div class="ctl btns" role="group" aria-label="Playback">
+    <button class="btn primary" id="btn-play"></button><button class="btn" id="btn-pause"></button><button class="btn" id="btn-step"></button><button class="btn" id="btn-reset"></button>
+  </div>
+  <label class="ctl">Speed <select id="speed" aria-label="Simulation speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+</header>
+<main class="stage">
+  <section class="canvaswrap" id="canvaswrap">
+    <svg id="net" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Network of 80 simulated phones in six neighborhoods. A text summary is in the side panel."></svg>
+    <div class="zoomctl"><button id="z-in" aria-label="Zoom in"></button><button id="z-out" aria-label="Zoom out"></button><button id="z-fit" aria-label="Fit whole network"></button></div>
+    <div class="hint">Scroll to zoom · drag to pan · click a phone for details</div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="legend" id="legend"></div>
+  </section>
+  <aside class="side" id="side" aria-live="polite"></aside>
+</main>
+<footer class="foot"><strong>Simulation · no real Bluetooth.</strong> Conceptual store-and-forward simulation. The proposed product would pass messages over short-range phone-to-phone radio links (for example Bluetooth LE); none of that is implemented here. Every number on this page is computed from the simulated network.</footer>
+<div class="modalroot" id="modalroot" hidden><div class="backdrop" id="mback"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle" id="modal" tabindex="-1"><h2 id="mtitle"></h2><div id="mbody"></div></div></div>
+<script src="mesh.js"></script>
+<script src="sim.js"></script>
+</body>
+</html>

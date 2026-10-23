@@ -1,0 +1,36 @@
+# OS / editor
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Node / Python
+node_modules/
+__pycache__/
+*.pyc
+
+# Android build outputs and local config (never commit these)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.cxx/
+android/captures/
+*.apk
+*.aab
+*.ap_
+
+# Signing material and secrets (never commit)
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+signing.properties
+.env
+.env.*
+secrets/
+
+# Test scratch output
+tests/out/
+dist/
