@@ -1,7 +1,7 @@
 <!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
 /* Simulator v3 checks: explanation, truthfulness of what is drawn, controls, accessibility, offline. usage: sim_v3_test.html?w=1440&h=900&src=/abs/simulator.html */
 var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src');
-var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC;document.body.appendChild(fr);
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC+'?mode=explore';document.body.appendChild(fr);
 var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 fr.onload=function(){setTimeout(function(){run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'})},300)};
 async function run(){

@@ -5,8 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Relay network simulator</title>
 <link rel="stylesheet" href="sim.css">
+<link rel="stylesheet" href="story.css">
 </head>
-<body class="simpage">
+<body class="mode-story">
+<div id="s-root" class="story">
+  <header class="s-top">
+    <div class="s-brand"><span class="s-mark" id="s-mark" aria-hidden="true"></span><strong>relay.</strong></div>
+    <label class="s-scen"><span class="sr">Scenario</span><select id="s-scenario" aria-label="Scenario"></select></label>
+    <span class="s-sim" id="s-sim">Simulation · not real Bluetooth</span>
+    <span class="s-spacer"></span>
+    <button class="s-link" id="s-to-explore">Explore</button>
+  </header>
+  <section class="s-narr" aria-live="polite">
+    <div class="s-copy">
+      <h1 id="s-head"></h1>
+      <p id="s-sub"></p>
+      <button class="s-info" id="s-info" aria-expanded="false" aria-controls="s-infotip">What is Relay?</button>
+      <span class="s-infotip" id="s-infotip" role="tooltip" hidden>Relay passes messages between nearby phones without internet.</span>
+    </div>
+    <div class="s-metrics" id="s-metrics"></div>
+  </section>
+  <main class="s-stage" id="s-stage">
+    <svg id="s-net" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Network of 80 simulated phones. The headline above says what is happening."></svg>
+    <div class="s-key" id="s-key" aria-hidden="true"></div>
+    <div class="s-overlay" id="s-overlay"></div>
+  </main>
+  <footer class="s-rail">
+    <ol class="s-progress" id="s-progress" aria-label="Progress"></ol>
+    <div class="s-act" id="s-act"></div>
+    <div class="s-ctl" role="group" aria-label="Playback">
+      <button id="s-playpause" aria-label="Pause"></button><button id="s-step" aria-label="Step once"></button><button id="s-restart" aria-label="Restart this scenario"></button>
+    </div>
+  </footer>
+</div>
+<div id="explore" class="simpage" hidden>
 <header class="bar">
   <div class="brand"><span class="mark" id="mark" aria-hidden="true"></span><div><strong>relay.</strong><small>Network simulator</small></div></div>
   <label class="ctl">Scenario <select id="scenario" aria-label="Demonstration scenario"></select></label>
@@ -15,6 +47,7 @@
   </div>
   <label class="ctl">Speed <select id="speed" aria-label="Simulation speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
   <span class="simtag" id="simtag">Simulation · not real Bluetooth</span>
+  <button class="btn" id="to-story">Story</button>
 </header>
 <main class="stage">
   <section class="canvaswrap" id="canvaswrap">
@@ -32,8 +65,10 @@
 </main>
 <footer class="foot"><strong>Simulation · no real Bluetooth.</strong> This browser page is a deterministic, conceptual store-and-forward model. Simulated minutes are not predictions of real delivery time, and positions are schematic, not geographic. The Android app's real radio behaviour is tested separately. Every number on this page is computed from the simulated network.</footer>
 <div class="modalroot" id="modalroot" hidden><div class="backdrop" id="mback"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle" id="modal" tabindex="-1"><h2 id="mtitle"></h2><div id="mbody"></div></div></div>
+</div>
 <script src="mesh.js"></script>
 <script src="sim_explain.js"></script>
 <script src="sim.js"></script>
+<script src="story.js"></script>
 </body>
 </html>

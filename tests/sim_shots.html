@@ -2,7 +2,7 @@
 /* Drives the real simulator to a named state (using only its own buttons and the engine) so a headless browser can screenshot it.
    usage: sim_shots.html?s=<state>&w=1440&h=900&src=/abs/path/simulator.html */
 var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src'),STATE=q.get('s')||'e0',REDUCE=q.get('reduce');
-var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';fr.src='file://'+SRC;document.body.appendChild(fr);
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';fr.src='file://'+SRC+'?mode=explore';document.body.appendChild(fr);
 fr.onload=function(){setTimeout(function(){try{go()}catch(e){document.title='ERR '+e.message+' '+(e.stack||'').split('\n')[1]}},300)};
 function go(){
 var w=fr.contentWindow,d=w.document,M=w.Mesh;function Q(s){return d.querySelector(s)}function click(s){var e=typeof s==='string'?Q(s):s;if(!e)throw new Error('missing '+s);e.click()}

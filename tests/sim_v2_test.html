@@ -1,6 +1,6 @@
 <!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
 var q=new URLSearchParams(location.search),W=+q.get('w')||1280,HH=+q.get('h')||760,SRC=q.get('src');
-var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC;document.body.appendChild(fr);
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC+'?mode=explore';document.body.appendChild(fr);
 var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 fr.onload=function(){setTimeout(function(){run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'})},300)};

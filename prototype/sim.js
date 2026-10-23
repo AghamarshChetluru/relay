@@ -4,7 +4,10 @@
   'use strict';
   var M = window.Mesh, X = window.SimExplain, W = 1000, H = 700, NS = 'http://www.w3.org/2000/svg';
   var st = { scen: 'emergency', pid: null, playing: false, timer: null, until: null, speed: 1, sel: null, notice: '', vb: { x: 0, y: 0, w: W, h: H }, anims: [], raf: 0,
-    ctx: {}, built: false, tab: 'walk', report: null, history: [], focus: 'city' };
+    ctx: {}, built: false, tab: 'walk', report: null, history: [], focus: 'city', mode: 'story', interval: 0 };
+  var L = {};   // tiny event bus so the Story view can follow the same engine and scenario state
+  function on(n, f) { (L[n] = L[n] || []).push(f); }
+  function emit(n, a) { (L[n] || []).forEach(function (f) { try { f(a); } catch (e) { setTimeout(function () { throw e; }); } }); }
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function $(id) { return document.getElementById(id); }
@@ -27,34 +30,43 @@
   function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 
   /* ---------- scenarios: every action is a real engine call ---------- */
+  var REQ = {
+    emergency: { request: { kind: 'urgent', category: 'Medical', title: 'Medical help needed near Hauz Khas Village', description: 'My mother needs medical assistance. She is having trouble breathing.', area: 'Hauz Khas Village', urgent: true },
+      reply: { kind: 'offer', note: 'I can walk your mother to the clinic gate. I am a nurse (self-reported).', area: 'Clinic gate' } },
+    missing: { request: { kind: 'missing', category: 'Missing', title: 'Looking for Meera, 8, red school bag', description: 'Last seen near the bus stop in a blue uniform.', area: 'Lodhi Road bus stop', urgent: false, targets: ['LC'], lastKnown: 'Lodhi Colony' },
+      reply: { kind: 'sighting', note: 'Saw a girl with a red bag near the clinic gate around 10am.', area: 'Clinic gate, 10am' } },
+    broadcast: { update: { text: 'Water collection point open at City Hall, north entrance.', category: 'Resources', area: 'Vasant Vihar' },
+      update2: { text: 'Second update: queue is moving slowly at the north entrance.', category: 'Community', area: 'Vasant Vihar' },
+      urgent: { kind: 'urgent', category: 'Medical', title: 'Medical help needed near the market', description: 'Someone has collapsed outside the market.', area: 'Vasant Vihar', urgent: true } }
+  };
   var SCEN = {
     emergency: { label: '1 · Emergency assistance', dest: true,
       situation: function () { return { head: 'Mobile networks are down.', body: [h('b', {}, 'A person in Hauz Khas needs a doctor.'), ' They cannot call anyone. ' + M.participating().length + ' of the 80 phones in this simulated area run Relay, which passes short messages directly between nearby phones. A clinic volunteer in Lodhi Colony is one phone that could respond. The request is not addressed to anyone: it spreads to every Relay phone it can reach.'] }; },
       steps: [
-      { t: 'A survivor posts a medical request', a: 'Post request', run: function () { var r = M.createRequest(K().A, { kind: 'urgent', category: 'Medical', title: 'Medical help needed near Hauz Khas Village', description: 'My mother needs medical assistance. She is having trouble breathing.', area: 'Hauz Khas Village', urgent: true }); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
+      { t: 'A survivor posts a medical request', a: 'Post request', run: function () { var r = M.createRequest(K().A, REQ.emergency.request); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
       { t: 'It spreads phone to phone, then stalls at a gap', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
       { t: 'It crosses and reaches the volunteer', a: 'Play', run: function () { play(function () { return M.nodeHas(K().E, mainPid()); }); }, done: function () { return !!mainPid() && M.nodeHas(K().E, mainPid()); } },
-      { t: 'The volunteer sends an offer of help', a: 'Send offer', run: function () { var x = M.createReply(K().E, st.ctx.rid, { kind: 'offer', note: 'I can walk your mother to the clinic gate. I am a nurse (self-reported).', area: 'Clinic gate' }); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
+      { t: 'The volunteer sends an offer of help', a: 'Send offer', run: function () { var x = M.createReply(K().E, st.ctx.rid, REQ.emergency.reply); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
       { t: 'The offer travels back to the requester', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.replyPid); }); }, done: function () { return !!st.ctx.replyPid && M.nodeHas(K().A, st.ctx.replyPid); } },
       { t: 'The requester acknowledges the offer', a: 'Acknowledge and send', run: function () { var x = M.createAck(K().A, st.ctx.replyPid); if (x.ok) { st.ctx.ackPid = x.packetId; select(x.packetId); play(function () { return M.nodeHas(K().E, x.packetId); }); } }, done: function () { return !!st.ctx.ackPid && M.nodeHas(K().E, st.ctx.ackPid); } }] },
     missing: { label: '2 · Missing person', dest: true,
       situation: function () { return { head: 'A child is missing and nobody can phone around.', body: [h('b', {}, 'A parent in Hauz Khas is looking for a child last seen near Lodhi Colony.'), ' The request carries a target area, not coordinates. Each phone declares a neighbourhood by choice (no GPS). Relay prefers to pass the request to phones whose declared area is closer to the target in a small offline neighbourhood graph, with a limited number of detours.'] }; },
       steps: [
-      { t: 'A survivor shares a missing-person request', a: 'Post request', run: function () { var r = M.createRequest(K().A, { kind: 'missing', category: 'Missing', title: 'Looking for Meera, 8, red school bag', description: 'Last seen near the bus stop in a blue uniform.', area: 'Lodhi Road bus stop', urgent: false, targets: ['LC'], lastKnown: 'Lodhi Colony' }); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
+      { t: 'A survivor shares a missing-person request', a: 'Post request', run: function () { var r = M.createRequest(K().A, REQ.missing.request); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
       { t: 'It spreads through participating phones and stalls', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
       { t: 'It reaches a phone near the clinic', a: 'Play', run: function () { play(function () { return M.nodeHas(K().E, mainPid()); }); }, done: function () { return !!mainPid() && M.nodeHas(K().E, mainPid()); } },
-      { t: 'Someone submits a possible sighting', a: 'Send sighting', run: function () { var x = M.createReply(K().E, st.ctx.rid, { kind: 'sighting', note: 'Saw a girl with a red bag near the clinic gate around 10am.', area: 'Clinic gate, 10am' }); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
+      { t: 'Someone submits a possible sighting', a: 'Send sighting', run: function () { var x = M.createReply(K().E, st.ctx.rid, REQ.missing.reply); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
       { t: 'The sighting returns. It stays unverified.', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.replyPid); }); }, done: function () { return !!st.ctx.replyPid && M.nodeHas(K().A, st.ctx.replyPid); } }] },
     broadcast: { label: '3 · Community broadcast', dest: false, phaseText: { outcome: 'An urgent request and community updates now compete for the same links.' },
       situation: function () { return { head: 'Useful information, but not an emergency.', body: [h('b', {}, 'A neighbour in Vasant Vihar posts that a water point is open.'), ' Community updates are the lowest priority: when a phone-to-phone link is busy, urgent requests go first. Later you will see an urgent request and an update compete for the same links.'] }; },
       steps: [
-      { t: 'Someone in Vasant Vihar posts a neighbourhood update', a: 'Post update', run: function () { var x = M.createBroadcast(K().L, { text: 'Water collection point open at City Hall, north entrance.', category: 'Resources', area: 'Vasant Vihar' }); st.ctx.bpid = x.packetId; select(x.packetId); }, done: function () { return !!st.ctx.bpid; } },
+      { t: 'Someone in Vasant Vihar posts a neighbourhood update', a: 'Post update', run: function () { var x = M.createBroadcast(K().L, REQ.broadcast.update); st.ctx.bpid = x.packetId; select(x.packetId); }, done: function () { return !!st.ctx.bpid; } },
       { t: 'It spreads, but only as far as Relay links reach', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
       { t: 'It crosses to the Hauz Khas side', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.bpid); }); }, done: function () { return !!st.ctx.bpid && M.nodeHas(K().A, st.ctx.bpid); } },
-      { t: 'Priority: an urgent request enters the same links', a: 'Post urgent request + update', run: function () { var b2 = M.createBroadcast(K().L, { text: 'Second update: queue is moving slowly at the north entrance.', category: 'Community', area: 'Vasant Vihar' }); st.ctx.bpid2 = b2.packetId; var r = M.createRequest(K().L, { kind: 'urgent', category: 'Medical', title: 'Medical help needed near the market', description: 'Someone has collapsed outside the market.', area: 'Vasant Vihar', urgent: true }); st.ctx.urgentPid = r.packetId; st.ctx.urgentTick = S().tick; select(r.packetId); }, done: function () { return !!st.ctx.urgentPid; } },
+      { t: 'Priority: an urgent request enters the same links', a: 'Post urgent request + update', run: function () { var b2 = M.createBroadcast(K().L, REQ.broadcast.update2); st.ctx.bpid2 = b2.packetId; var r = M.createRequest(K().L, REQ.broadcast.urgent); st.ctx.urgentPid = r.packetId; st.ctx.urgentTick = S().tick; select(r.packetId); }, done: function () { return !!st.ctx.urgentPid; } },
       { t: 'Watch which message goes first on a busy link', a: 'Step once', run: function () { pause(); st.notice = ''; doStep(); }, done: function () { return contested().length > 0; } }] }
   };
   function contested() {   // link-capacity waits since the urgent request was posted: the engine's own priority ordering at work
@@ -67,7 +79,7 @@
     change: 'Someone joins Relay. Watch what becomes possible, and what actually arrives.', outcome: 'A human response travels back through the same kind of links.' };
   function mainPid() { return st.ctx.rid ? S().requests[st.ctx.rid].packetId : (st.ctx.bpid || null); }
   function stalled() { return !!st.ctx.sawStall; }   // sticky: once the stall has been observed the story step stays done
-  function noteStall() { var p = mainPid(); if (!p) return; var s = M.stats(p); if (s.held > 1 && !s.canMove) st.ctx.sawStall = true; }
+  function noteStall() { var p = mainPid(); if (!p) return; var s = M.stats(p); if (s.held > 1 && !s.canMove && !st.ctx.sawStall) { st.ctx.sawStall = true; st.ctx.stallHeld = s.held; } }
   function bridged() { return S().nodes[K().D].hasApp; }
   function gapNode() { var p = mainPid(), s = p && M.stats(p); return s && s.blocked && s.candidates.length ? s.candidates[0] : K().D; }
   function curStep() { var sc = SCEN[st.scen]; for (var i = 0; i < sc.steps.length; i++) if (!sc.steps[i].done()) return i; return sc.steps.length; }
@@ -159,6 +171,7 @@
   /* ---------- painting ---------- */
   function paint() {
     if (!st.built) return; st.drawn = true;
+    if (st.mode !== 'explore') { noteStall(); emit('paint'); return; }
     var s = S(), pid = st.pid, p = pid && s.packets[pid], stt = p ? M.stats(pid) : null, u = st.u || 1;
     noteStall();
     var g = p ? X.groupsFor(pid) : null, fr = p ? X.frontier(pid) : null, has = {}, reach = {}, cut = {}, fresh = {}, hop = {}, path = {}, next = {}, held = {}, cand = {};
@@ -200,7 +213,7 @@
     Object.keys(cand).forEach(function (id) { ring(id, 'gap', 12); lab(id, s.nodes[id].label + ' · no Relay', 'gap'); });
     if (st.sel && st.sel !== origin && st.sel !== dest && !cand[st.sel]) { ring(st.sel, 'origin', 9); lab(st.sel, X.nm(st.sel)); }
     if (st.vb.w < 380) s.order.forEach(function (id) { var n = s.nodes[id]; if (n.x < st.vb.x - 10 || n.x > st.vb.x + st.vb.w + 10 || n.y < st.vb.y - 10 || n.y > st.vb.y + st.vb.h + 10) return; var t = el('text', { x: n.x + 8 * u, y: n.y - 7 * u, class: 'nl', style: 'font-size:' + (9.5 * u) + 'px;stroke-width:' + (2.5 * u) + 'px' }, st.labG); t.textContent = id; });   // semantic zoom: phone ids appear when zoomed in
-    markFocus(); panels(p, stt, g, fr, dest); controls(stt);
+    markFocus(); panels(p, stt, g, fr, dest); controls(stt); emit('paint');
   }
   function controls(stt) {
     var can = st.pid && stt && stt.canMove;
@@ -465,7 +478,7 @@
   function doStep() {
     var before = X.snapshotPlan(); M.step(); st.report = X.report(before);
     st.history.push({ tick: st.report.tick, moves: st.report.moves.map(function (m) { return { from: m.from, to: m.to, pid: m.pid, det: m.det, code: m.code }; }), waited: st.report.waited.map(function (w) { return { from: w.from, to: w.to, pid: w.pid, code: w.code, winner: w.winner }; }) });
-    if (st.history.length > 300) st.history.shift(); startAnim(); paint();
+    if (st.history.length > 300) st.history.shift(); if (st.mode === 'explore') startAnim(); emit('step', st.report); paint();
   }
   function play(until) {
     st.notice = '';
@@ -473,18 +486,25 @@
     if (!M.stats(st.pid).canMove) { st.notice = 'This message cannot move right now: no Relay phone holding it has a Relay neighbour that lacks it.'; paint(); return; }
     st.until = until || null; st.playing = true; schedule(); paint();
   }
-  function schedule() { clearTimeout(st.timer); st.timer = setTimeout(tick, 1100 / st.speed); }
+  function schedule() { clearTimeout(st.timer); st.timer = setTimeout(tick, st.interval || 1100 / st.speed); }
   function tick() {
     if (!st.playing) return; doStep();
     var stop = (st.until && st.until()) || !st.pid || !M.stats(st.pid).canMove;
     if (stop) pause(); else schedule();
   }
-  function pause() { clearTimeout(st.timer); st.timer = null; st.playing = false; st.until = null; stopAnim(); paint(); }
+  function pause() { clearTimeout(st.timer); st.timer = null; st.playing = false; st.until = null; stopAnim(); emit('pause'); paint(); }
   function resetWorld() {
-    pause(); M.reset(); st.ctx = {}; st.pid = null; st.sel = null; st.notice = ''; st.report = null; st.history = []; st.tab = 'walk'; stopAnim(); build(); fit(); paint();
+    pause(); M.reset(); st.ctx = {}; st.pid = null; st.sel = null; st.notice = ''; st.report = null; st.history = []; st.tab = 'walk'; stopAnim(); build(); fit(); emit('reset'); paint();
   }
 
-  /* ---------- consent-based install dialog ---------- */
+  /* ---------- consent-based install (Explore dialog and Story share this) ---------- */
+  function sharerFor(id) { var p = mainPid() || st.pid; return M.sharers(id).sort(function (a, b) { return (p && M.nodeHas(b, p)) - (p && M.nodeHas(a, p)); })[0]; }
+  function doJoin(id, sh, p) {
+    var before = p ? X.connectivity(p) : null, r = M.join(id, sh); st.notice = r.ok ? '' : r.error;
+    if (r.ok && p) { var after = X.connectivity(p); st.ctx.install = { id: id, pid: p, links: X.liveLinks(id).length, before: before, after: after, newSet: X.groupsFor(p).reachable.slice(), tick: S().tick }; st.report = null; }
+    return r;
+  }
+
   function openInstall(id) {
     pause(); var s = S(), n = s.nodes[id], p = st.pid;
     var sh = M.sharers(id).sort(function (a, b) { return (p && M.nodeHas(b, p)) - (p && M.nodeHas(a, p)); })[0];
@@ -501,9 +521,7 @@
         h('div', { class: 'stack', style: 'margin-top:12px' }, h('button', { class: 'btn primary block', id: 'inst-send', on: { click: function () { stage = 1; show(); } } }, 'Share install file'), h('button', { class: 'btn block', on: { click: closeModal } }, 'Cancel'))));
       else body.appendChild(h('div', {}, h('p', {}, 'Install Relay on the ' + n.label.toLowerCase() + '? It will then pass on messages from nearby phones.'),
         h('div', { class: 'stack' }, h('button', { class: 'btn primary block', id: 'inst-accept', on: { click: function () {
-          var before = p ? X.connectivity(p) : null, r = M.join(id, sh); closeModal(); st.notice = r.ok ? '' : r.error;
-          if (r.ok && p) { var after = X.connectivity(p); st.ctx.install = { id: id, pid: p, links: X.liveLinks(id).length, before: before, after: after, newSet: X.groupsFor(p).reachable.slice(), tick: S().tick }; st.report = null; }
-          paint(); } } }, 'Accept installation'), h('button', { class: 'btn block', on: { click: closeModal } }, 'Cancel'))));
+          doJoin(id, sh, p); closeModal(); paint(); } } }, 'Accept installation'), h('button', { class: 'btn block', on: { click: closeModal } }, 'Cancel'))));
     }
     $('modalroot').hidden = false; show(); $('modal').focus();
   }
@@ -516,7 +534,8 @@
     setBtn('btn-play', 'play', 'Play'); setBtn('btn-pause', 'pause', 'Pause'); setBtn('btn-step', 'step', 'Step'); setBtn('btn-reset', 'reset', 'Reset');
     $('z-in').appendChild(icon('zin')); $('z-out').appendChild(icon('zout')); $('z-fit').appendChild(icon('fit'));
     var sel = $('scenario'); Object.keys(SCEN).forEach(function (k) { sel.appendChild(h('option', { value: k }, SCEN[k].label)); });
-    sel.addEventListener('change', function () { st.scen = sel.value; resetWorld(); });
+    sel.addEventListener('change', function () { setScenario(sel.value); });
+    $('to-story').addEventListener('click', function () { setMode('story'); });
     $('speed').addEventListener('change', function (e) { st.speed = +e.target.value; if (st.playing) schedule(); });
     $('btn-play').addEventListener('click', function () { play(null); }); $('btn-pause').addEventListener('click', pause);
     $('btn-step').addEventListener('click', function () { pause(); st.notice = ''; if (!st.pid) { st.notice = 'Nothing to step yet. Post a message with the blue button first.'; paint(); return; } doStep(); });
@@ -534,6 +553,15 @@
       ['ln', 'Path it took'], ['ln hop', 'Moved this step'], ['ln next', 'Will move next'], ['ln held', 'Held back']].forEach(function (x) { lg.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
     build(); attach(); fit(); paint();
   }
-  window.RelaySim = { state: st };
+  function setScenario(k) { st.scen = k; var sel = $('scenario'); if (sel) sel.value = k; resetWorld(); }
+  function setMode(m) {
+    pause(); st.mode = m; document.body.className = 'mode-' + m; $('s-root').hidden = m !== 'story'; $('explore').hidden = m !== 'explore';
+    try { history.replaceState(null, '', m === 'explore' ? '#explore' : location.pathname + location.search.replace(/[?&]mode=explore/, '')); } catch (e) {}
+    if (m === 'explore') { st.interval = 0; rescale(); paint(); } else { st.interval = STORY_INTERVAL; emit('mode', m); emit('paint'); }
+  }
+  var STORY_INTERVAL = 640;   // ms between simulated steps while Story plays; Explore keeps its own speed control
+  window.RelaySim = { state: st, on: on, api: { SCEN: SCEN, REQ: REQ, setScenario: setScenario, setMode: setMode, curStep: curStep, doStep: doStep, play: play, pause: pause, reset: resetWorld, select: select, mainPid: mainPid,
+    bridged: bridged, gapNode: gapNode, stalled: stalled, sharerFor: sharerFor, join: function (id) { var sh = sharerFor(id); if (!sh) return { ok: false, error: 'No neighbouring phone with Relay is close enough to share it.' }; var r = doJoin(id, sh, mainPid() || st.pid); paint(); return r; }, contested: contested, S: S, K: K } };
+  var qs = location.search + location.hash; setMode(/mode=explore|#explore/.test(qs) ? 'explore' : 'story');
   boot();
 })();
