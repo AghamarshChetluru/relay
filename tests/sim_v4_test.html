@@ -34,7 +34,7 @@ R.on('paint',function(){
   if(/reached the requester/.test(head)&&!(c.replyPid&&M.nodeHas(A,c.replyPid)))bad.push('head says reply reached requester but A lacks it ['+m+']');
   if(/Acknowledgment delivered/.test(head)&&!(E&&c.ackPid&&M.nodeHas(E,c.ackPid)))bad.push('head says acknowledgment delivered but the responder lacks it ['+m+']');
   if(/possible sighting reached the requester/.test(head)&&!(c.replyPid&&M.nodeHas(A,c.replyPid)))bad.push('sighting shown as returned but A lacks it');
-  if(/Send an offer|Send a sighting/.test(T('#s-primary'))&&!(E&&rp&&M.nodeHas(E,rp)))bad.push('responder action offered before the responder holds the request');
+  if(/Send example (offer|sighting)/.test(T('#s-primary'))&&!(E&&rp&&M.nodeHas(E,rp)))bad.push('responder action offered before the responder holds the request');
   if(/Acknowledge the offer/.test(T('#s-primary'))&&!(c.replyPid&&M.nodeHas(A,c.replyPid)))bad.push('acknowledge offered before reply arrived');
   QA('.ph').forEach(function(p){var t=p.textContent;
     if(/Requester.s phone/.test(t)&&/Offer of help|Possible sighting/.test(t)&&/Unverified/.test(t)&&!(c.replyPid&&M.nodeHas(A,c.replyPid)))bad.push('requester phone shows a reply it has not received');
@@ -93,7 +93,7 @@ ok(!ST.playing&&!st5.canMove&&/can.t go any further/.test(T('#s-head'))&&/withou
 var h5=st5.held;await sleep(1600);ok(M.stats(rpid).held===h5&&+T('#s-metrics b')===h5,'5 the received count stops increasing ('+h5+')');
 ok(QA('#s-net .sring.bridge').length===1&&br&&br.id===API.gapNode()&&!M.canRelay(br.id),'5 the bridge phone ('+(br&&br.id)+') has a single focal ring and really lacks Relay');
 ok(QA('#s-net .se.amber').length>0&&QA('#s-net .se.amber').every(function(l){return true})&&S().adj[br.id].filter(M.canRelay).length===QA('#s-net .se.amber').length,'5 amber "could connect" links are exactly the bridge phone\'s Relay neighbours ('+QA('#s-net .se.amber').length+')');
-ok(QA('#s-net circle.sn.cut').length===g5.cutOff.length&&g5.cutOff.length>0&&+QA('#s-metrics b')[1].textContent===g5.cutOff.length,'5 the disconnected group is distinct and its count is the engine\'s ('+g5.cutOff.length+')');
+ok(QA('#s-net circle.sn.cut').length===g5.cutOff.length&&g5.cutOff.length>0&&+QA('#s-metrics b')[1].textContent===br.unlock,'5 the disconnected group is distinct and its count is the engine\'s ('+g5.cutOff.length+')');
 ok(S().order.every(function(i){return !M.nodeHas(i,rpid)||M.canRelay(i)})&&!X.groupsFor(rpid).cutOff.some(function(i){return M.nodeHas(i,rpid)}),'5 no phone beyond the gap holds the request (the bridge really blocks it)');
 ok(!/entire|whole city|everyone is/.test(T('#s-head')+T('#s-sub')),'5 the claim is limited to the groups the engine shows');
 /* keyboard path to the bridge */
@@ -111,31 +111,31 @@ ok(/A new path is open/.test(T('#s-head'))&&/Delivery hasn.t happened yet/.test(
 ok(M.holders(rpid).length===held6&&+T('#s-metrics b')===held6,'6 right after install NOTHING is received yet (received stays '+held6+')');
 var g6=X.groupsFor(rpid);ok(g6.reachable.length>0&&QA('#s-net circle.sn.reach').length===g6.reachable.length,'6 newly reachable phones are drawn differently from received ('+g6.reachable.length+')');
 ok(M.coverage().groups<groups6,'6 Relay groups merged '+groups6+' -> '+M.coverage().groups+' (engine)');
-ok(+QA('#s-metrics b')[1].textContent===g6.holders.length+g6.reachable.length&&/was \d+/.test(T('#s-metrics')),'6 "can now reach" comes from the engine and shows the before value');
+ok(+QA('#s-metrics b')[1].textContent===ST.ctx.install.newSet.length&&/newly connected/.test(T('#s-metrics')),'6 the second number is the true set difference ('+ST.ctx.install.newSet.length+' newly connected), not everything connected');
 ok(QA('#s-net .se.poss').length>0&&QA('#s-net .se.poss').length===X.frontier(rpid).next.length,'6 the open path is the engine\'s next hand-off ('+QA('#s-net .se.poss').length+')');
 ok(/Watch it cross/.test(T('#s-primary')),'6 the next action is obvious: "'+T('#s-primary')+'"');
 ST.interval=640;var h6=M.holders(rpid).length;click('#s-primary');
 await waitFor(function(){return M.holders(rpid).length>h6},10000);
 ok(M.holders(rpid).length>h6&&QA('#s-net circle.sn.held').length===M.holders(rpid).filter(M.canRelay).length,'6 phones light up only as the engine actually stores the request (held '+h6+' -> '+M.holders(rpid).length+')');
-ok(/crossing/.test(T('#s-head'))&&/of the \d+ newly reachable/.test(T('#s-sub')),'6 while crossing: "'+T('#s-sub')+'"');
+ok(/crossing/.test(T('#s-head'))&&/newly connected/.test(T('#s-sub')),'6 while crossing: "'+T('#s-sub')+'"');
 /* ===== 7. the volunteer cannot act until the request arrives ===== */
 await layoutCheck('crossing');
 var lacking=X.groupsFor(rpid).reachable.filter(function(i){return !M.nodeHas(i,rpid)})[0],directReply=M.createReply(lacking,rid,{kind:'offer',note:'early offer',area:'x'});
 ok(!!lacking&&!M.nodeHas(lacking,rpid)&&directReply.ok===false,'7 the engine itself refuses a reply from a phone that does not hold the request ('+directReply.error+')');
-ok(!/Send an offer/.test(T('#s-primary'))&&!QA('.ph').some(function(p){return /Requester.s phone|Responder/.test(p.textContent)})&&API.responder()===null,'7 no "Send an offer", no responder preview and no named responder before delivery');
+ok(!/Send example/.test(T('#s-primary'))&&!QA('.ph').some(function(p){return /Requester.s phone|Responder/.test(p.textContent)})&&API.responder()===null,'7 no "Send example offer", no responder preview and no named responder before delivery');
 ok(await waitFor(function(){return mom()==='respond'},60000),'7 the request reaches a person on the other side ('+mom()+')');
 var E=API.responder(),ins=ST.ctx.install;
 ok(!!E&&M.nodeHas(E,rpid)&&E!==A&&E!==ins.id&&ins.newSet.indexOf(E)>=0&&!M.canRelay(ins.id)===false,'7 the responder ('+E+') is an ordinary phone that really holds the request, is on the far side of the bridge, and is neither the requester nor the bridge');
-ok(M.nodeHas(E,rpid)&&/Send an offer/.test(T('#s-primary'))&&/reached someone who could respond/.test(T('#s-head'))&&T('#s-sub').indexOf(S().nodes[E].area)>=0,'7 only now: "'+T('#s-head')+'" / "'+T('#s-primary')+'"');
+ok(M.nodeHas(E,rpid)&&/Send example offer/.test(T('#s-primary'))&&/reached someone who could respond/.test(T('#s-head'))&&T('#s-sub').indexOf(S().nodes[E].area)>=0,'7 only now: "'+T('#s-head')+'" / "'+T('#s-primary')+'"');
 await layoutCheck('respond');
 var vp=QA('.ph').filter(function(p){return /Responder/.test(p.textContent)})[0];
-ok(!!vp&&/Medical help needed/.test(vp.textContent)&&/Received on this phone/.test(vp.textContent)&&/Draft reply/.test(vp.textContent),'7 the responder\'s phone shows the request it really holds and its draft reply');
+ok(!!vp&&/Medical help needed/.test(vp.textContent)&&/Received on this phone/.test(vp.textContent)&&/Example reply/.test(vp.textContent)&&/chooses whether to send/.test(vp.textContent),'7 the responder\'s phone shows the request it really holds and its draft reply');
 ok(!/clinic/i.test(T('#s-root')),'7 nothing on screen assumes the helper is a clinic');
 ok(!/cut off|of \d+ Relay/.test(vp.textContent),'7 phone preview holds no global statistics');
 /* ===== 8. the reply actually travels back ===== */
 click('#s-primary');var rp=ST.ctx.replyPid;await sleep(100);
 ok(!!rp&&S().packets[rp].type==='reply'&&M.holders(rp).join()===E&&S().packets[rp].originNodeId===E,'8 the reply is a new engine packet created by, and starting only on, the responder phone');
-ok(!M.nodeHas(A,rp)&&/nearby person replied/.test(T('#s-head'))&&/still travelling/.test(T('#s-sub')),'8 "'+T('#s-head')+'" / "'+T('#s-sub')+'": not shown as arrived');
+ok(!M.nodeHas(A,rp)&&/reply is on its way back/.test(T('#s-head'))&&/different route/.test(T('#s-sub')),'8 "'+T('#s-head')+'" / "'+T('#s-sub')+'": not shown as arrived');
 ok(QA('#s-net circle.sn.held.rep').length===M.holders(rp).filter(M.canRelay).length&&QA('#s-net circle.sn.held.rep').length>=1,'8 the tracked packet is now the reply (violet), drawn only where the engine stores it');
 await layoutCheck('return');
 ok(await waitFor(function(){return mom()==='arrived'},60000)&&M.nodeHas(A,rp),'8 the reply reaches the requester');
@@ -147,7 +147,7 @@ ok(/Acknowledge the offer/.test(T('#s-primary'))&&!/Acknowledgment delivered/.te
 click('#s-primary');var ak=ST.ctx.ackPid;await sleep(100);
 ok(!!ak&&S().packets[ak].type==='ack'&&!M.nodeHas(E,ak)&&!/delivered/.test(T('#s-head')),'8 the acknowledgment is a real packet and is not "delivered" until it arrives');
 ok(await waitFor(function(){return mom()==='done'},60000)&&M.nodeHas(E,ak),'8 the acknowledgment reaches the responder');
-ok(/Request received\. Offer returned\. Acknowledgment delivered\./.test(T('#s-head'))&&/can.t guarantee/.test(T('#s-sub'))&&/self-reported/.test(T('#s-sub')),'8 completion states exactly what happened, with the honest qualification');
+ok(/Request received\. Offer returned\. Acknowledgment delivered\./.test(T('#s-head'))&&/can.t guarantee/.test(T('#s-sub'))&&/simulated person/.test(T('#s-sub')),'8 completion states exactly what happened, with the honest qualification');
 await layoutCheck('done');
 ok(Q('#s-replay')&&Q('#s-next')&&Q('#s-explore2')&&/missing-person/.test(T('#s-next')),'8 Replay / Try missing-person / Explore are offered');
 ok(!/rescued|saved|safe\b|alive|help arrived|guarantee[sd] /i.test(T('#s-head')),'8 no rescue or safety claim in the headline');
@@ -163,7 +163,9 @@ click('#to-story');await sleep(200);ok(ST.mode==='story'&&mom()==='done'&&S().ti
 /* ===== 10. missing person ===== */
 API.setScenario('missing');await sleep(100);var mrid,mrp;
 ok(ST.scen==='missing'&&mom()==='need'&&/A child is missing/.test(T('#s-head'))&&/Lodhi Colony/.test(T('#s-sub')),'10a missing person: "'+T('#s-head')+'"');
-ok(QA('#s-net rect.sz.target').length===1&&/last-known area/.test(T('#s-net'))&&/not GPS/.test(T('#s-net')),'10a the target locality is marked, declared not GPS');
+var lcPhones=S().order.filter(function(i){return M.canRelay(i)&&M.hoodState(i).reliable&&M.hoodState(i).id==='LC'});
+ok(QA('#s-net .sz.target').length===0&&QA('#s-net .sring.tgt').length===lcPhones.length&&lcPhones.length>0,'10a the target is the set of phones that DECLARE Lodhi Colony ('+lcPhones.length+' ringed), not a drawn rectangle');
+ok(/Declares Lodhi Colony/.test(T('#s-key'))&&/clusters are where phones meet/.test(T('#s-note')),'10a the key and the stage note say clusters are schematic and areas are declared');
 click('#s-primary');mrid=ST.ctx.rid;mrp=API.mainPid();
 ok(await waitFor(function(){return mom()==='decision'||mom()==='gap'},60000),'10a the engine reaches a real forwarding choice');
 if(mom()==='decision'){var dec=RS.state.decision,pre=X.frontier(mrp);

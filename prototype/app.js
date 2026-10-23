@@ -566,7 +566,7 @@
         var pp = p.payload, acked = M.ackedBy(v, p.id), nr = S().local[v].notRelevant[p.id], hasAddr = !!M.ownAddress(v, rid), sharedAddr = M.addressSharedFor(v, p.id);
         var box = h('div', { class: 'offer', 'data-pid': p.id }, h('strong', {}, pp.kind === 'sighting' ? 'Possible sighting · Unverified' : 'Offer of help · Unverified'),
           h('p', { style: 'margin:6px 0' }, pp.note), pp.area ? h('div', { class: 'meta' }, icon('pin', 'sm'), h('span', {}, pp.area)) : null,
-          h('div', { class: 'help' }, 'From a nearby volunteer' + (pp.fromHood ? ' in ' + pp.fromHood : '') + '; what they say about themselves is not verified. A response is not proof of safety or that help has arrived.'));
+          h('div', { class: 'help' }, 'From a phone that declares ' + (pp.fromHood || 'an unknown area') + '; what they say about themselves is not verified. A response is not proof of safety or that help has arrived.'));
         if (acked) box.appendChild(h('div', { class: 'row', style: 'margin-top:8px' }, pill('Acknowledged on this phone', 'good'), h('span', { class: 'help', style: 'margin:0' }, 'The volunteer learns this only when it reaches their phone.')));
         else if (nr) box.appendChild(h('div', { class: 'help' }, 'Marked not relevant.'));
         else if (!resolved) box.appendChild(h('div', { class: 'row', style: 'margin-top:10px' },

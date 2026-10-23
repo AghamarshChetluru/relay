@@ -50,12 +50,12 @@ click('#btn-do');ok(/would link/.test(T('#inst-effect')),'Q6 install dialog says
 ok(M.holders(pid).length===heldBefore&&T('#m-held')===String(heldBefore),'right after install NOTHING is received yet (received stays '+heldBefore+')');
 ok(Number(T('#r-reach'))>0&&Number(T('#r-reach'))===X.groupsFor(pid).reachable.length,'but "could still receive" jumps to '+T('#r-reach')+' (engine reachable)');
 ok(M.coverage().groups<groupsBefore&&/Relay groups: \d+ → \d+/.test(T('#changedcard')),'groups merge and the change card says so');
-ok(QA('#net line.e.next').length>0&&/Newly connected/.test(T('#changedcard'))&&/Newly reachable/.test(T('#changedcard'))&&/Actually received since/.test(T('#changedcard')),'change card separates connected / reachable / actually received');
+ok(QA('#net line.e.next').length>0&&/Bridge phone joined/.test(T('#changedcard'))&&/Newly connected/.test(T('#changedcard'))&&/Have it since/.test(T('#changedcard')),'change card separates the bridge joining / newly connected / actually have it');
 ok(/crossroads phone/i.test(T('#changedcard')),'change card names the bridge phone');
-var newSet=S()&&X.groupsFor(pid).reachable.slice();click('#btn-do');await waitFor(function(){return M.nodeHas(K().E,pid)},60000);
+var newSet=R.state.ctx.install.newSet.slice();click('#btn-do');await waitFor(function(){return M.nodeHas(K().E,pid)},60000);
 ok(M.nodeHas(K().E,pid)&&newSet.some(function(i){return M.nodeHas(i,pid)}),'then packets actually cross and phones receive in steps');
 click('#btn-pause');
-var got=newSet.filter(function(i){return M.nodeHas(i,pid)}).length;ok(new RegExp('Actually received since[\\s\\S]*'+got+' of those '+newSet.length).test(T('#changedcard')),'card live count matches engine ('+got+' of '+newSet.length+')');
+var got=newSet.filter(function(i){return M.nodeHas(i,pid)}).length;ok(new RegExp('Have it since[\\s\\S]*'+got+' of those '+newSet.length).test(T('#changedcard')),'card live count matches engine ('+got+' of '+newSet.length+')');
 /* ===== outcome ===== */
 click('#btn-do');var rp=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='reply'})[0];
 ok(/Offer of help/.test(T('#outcomecard'))&&/Unverified/.test(T('#outcomecard'))&&/nurse/.test(T('#outcomecard')),'Q7 reply card shows the engine reply, labelled unverified');
@@ -76,7 +76,8 @@ ok(vb[2]<1000&&vb[0]<=zz.x&&vb[1]<=zz.y&&vb[0]+vb[2]>=zz.x+zz.w&&vb[1]+vb[3]>=zz
 click('#focus-city');vb=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(vb[2]===1000&&QA('#net text.nl').length===0,'City view restores the whole network');
 /* ===== missing person ===== */
 chg('#scenario','missing');click('#btn-do');var mp=R.state.pid;
-ok(/TARGET AREA/.test(T('#net'))&&/STEPS? AWAY/.test(T('#net'))&&QA('#net rect.zone.target').length===1,'target neighbourhood marked; other zones labelled with steps away');
+var lcN=S().order.filter(function(i){return M.canRelay(i)&&M.hoodState(i).reliable&&M.hoodState(i).id==='LC'}).length;
+ok(QA('#net rect.zone.target').length===0&&/CLUSTER/.test(T('#net'))&&QA('#net .ring.tgt').length>=lcN-1&&QA('#net .ring.tgt').length<=lcN&&lcN>0,'target = phones that declare the area (ringed; the scripted responder has its own ring), clusters are only labelled as clusters');
 ok(!!Q('#hoodcard')&&/not kilometres, and not GPS/.test(T('#hoodcard'))&&QA('#hoodcard circle:not(.ring0)').length===10,'neighbourhood graph card: 10 localities, "not GPS"');
 var seen={};for(var i=0;i<60&&M.stats(mp).canMove;i++){click('#btn-step');var wl=QA('#why li').map(function(x){return x.textContent}).join(' ');['Closer to the target','Equally close','Same-area forwarding','Permitted detour','Not forwarded'].forEach(function(k){if(wl.indexOf(k)>=0)seen[k]=1});}
 ok(Object.keys(seen).length>=2,'missing person: reasons shown from the neighbourhood graph ('+Object.keys(seen).join(', ')+')');

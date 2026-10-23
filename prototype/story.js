@@ -27,6 +27,7 @@
     if (n === 'step') { el('path', { d: 'M6 5l9 7-9 7z', fill: 'currentColor' }, s); el('rect', { x: 17, y: 5, width: 2.4, height: 14, rx: 1, fill: 'currentColor' }, s); return s; }
     el('path', { d: ICON[n], fill: n === 'play' || n === 'step' ? 'currentColor' : 'none', stroke: n === 'play' || n === 'step' ? 'none' : 'currentColor', 'stroke-width': 1.9, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, s); return s;
   }
+  function sc0() { return st.scen; }
   function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
   function lc(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
 
@@ -39,14 +40,33 @@
   /* ================= which moment are we in? derived from the engine ================= */
   function origin() { return st.scen === 'broadcast' ? API.poster() : K().A; }
   function area(id) { return S().nodes[id].area; }
+  function trustedHood(id) { var x = M.hoodState(id); return x.reliable ? x.id : null; }
+  function clusterOf(id) { var z = S().hoods.filter(function (h) { return h.id === S().nodes[id].zone; })[0]; return z ? z.name : ''; }
   function pathMoment(pid) {
-    var ctx = st.ctx;
+    var ctx = st.ctx, sr = X.stopReason(pid);
     if (V.decision) return { id: 'decision' };
-    if (API.bridged()) { var base = ctx.install ? ctx.install.before.holders : (ctx.stallHeld || 0); return M.stats(pid).held > base ? { id: 'crossing' } : { id: 'connect' }; }
-    if (ctx.sawStall && !M.stats(pid).canMove) return { id: 'gap' };
+    if (API.bridged()) {
+      var base = ctx.install ? ctx.install.before.holders : (ctx.stallHeld || 0);
+      if (M.stats(pid).held > base) return (sr.code !== 'moving' && !API.responder()) ? { id: 'stopped', why: sr } : { id: 'crossing' };
+      return { id: 'connect' };
+    }
+    if (ctx.sawStall && sr.code !== 'moving') return sr.code === 'gap' ? { id: 'gap' } : { id: 'stopped', why: sr };
     return { id: 'spread' };
   }
+  /* A message that outlived its lifetime before it got where the story needs it is its own moment, never a "gap". */
+  function delivered(pid, m) {
+    var c = st.ctx, p = S().packets[pid]; if (!p) return false;
+    if (p.type === 'reply') return M.nodeHas(K().A, pid);
+    if (p.type === 'ack') return !!API.responder() && M.nodeHas(API.responder(), pid);
+    if (st.scen === 'broadcast') return pid === c.bpid ? M.nodeHas(K().A, pid) : false;
+    return !!API.responder() && M.nodeHas(API.responder(), pid);
+  }
   function moment() {
+    var m = baseMoment(), tp = tracked(m);
+    if (tp && ['spread', 'decision', 'gap', 'connect', 'crossing', 'return', 'ack', 'ready', 'stopped'].indexOf(m.id) >= 0 && M.isExpired(S().packets[tp]) && !delivered(tp, m)) return { id: 'expired', pid: tp };
+    return m;
+  }
+  function baseMoment() {
     var ctx = st.ctx, sc = st.scen, A = K().A, E = API.responder(), rp = API.mainPid();
     if (sc === 'broadcast') {
       if (!ctx.bpid) return { id: 'need' };
@@ -63,13 +83,14 @@
   function tracked(m) {
     var c = st.ctx;
     if (m.id === 'need') return null;
+    if (m.id === 'expired') return m.pid;
     if (st.scen === 'broadcast') return (m.id === 'ready' || m.id === 'contest') ? c.urgentPid : c.bpid;
     if (m.id === 'ack' || m.id === 'done') return c.ackPid || c.replyPid;
     if (m.id === 'return' || m.id === 'arrived') return c.replyPid;
     return API.mainPid();
   }
   function stepIndex(m) {
-    var i = { need: 0, spread: 1, decision: 1, gap: 2, connect: 3, crossing: 3 }[m.id]; return i == null ? 4 : i;
+    var i = { need: 0, spread: 1, decision: 1, stopped: 1, expired: 1, gap: 2, connect: 3, crossing: 3 }[m.id]; return i == null ? 4 : i;
   }
   function playing() { return st.playing; }
   function isPlayMoment(m) { return ['spread', 'crossing', 'return', 'ack'].indexOf(m.id) >= 0; }
@@ -139,7 +160,8 @@
     if (!V.cam || instant || reduce) { V.cam = target; V.tween = null; applyCam(); return; }
     var from = { x: V.cam.x, y: V.cam.y, w: V.cam.w, h: V.cam.h }, same = Math.abs(from.x - target.x) + Math.abs(from.y - target.y) + Math.abs(from.w - target.w) < 1;
     if (same) { V.cam = target; applyCam(); return; }
-    V.tween = { from: from, to: target, t0: performance.now(), dur: 620 }; if (!V.raf) V.raf = requestAnimationFrame(frame);
+    var tw = V.tween = { from: from, to: target, t0: performance.now(), dur: 620 }; if (!V.raf) V.raf = requestAnimationFrame(frame);
+    clearTimeout(V.camTimer); V.camTimer = setTimeout(function () { if (V.tween === tw) { V.cam = tw.to; V.tween = null; applyCam(); } }, tw.dur + 120);   // animation frames can be throttled (hidden tab); never leave the camera stranded part-way
   }
   function applyCam() {
     var c = V.cam, sb = stageBox(); $('s-net').setAttribute('viewBox', c.x + ' ' + c.y + ' ' + c.w + ' ' + c.h); V.u = c.w / sb.w; applyScale(); positionOverlays();
@@ -193,17 +215,14 @@
     });
     /* zones: names, and in the missing-person story the declared target area with each area's distance to it */
     var targets = sc === 'missing' ? API.REQ.missing.request.targets : [];
-    s.hoods.forEach(function (hd) {
-      var z = V.zoneEls[hd.id], isT = targets.indexOf(hd.hood) >= 0, d = targets.length ? M.hoodDistance(hd.hood, targets[0]) : null;
-      z.r.setAttribute('class', 'sz' + (isT ? ' target' : '')); z.t.setAttribute('class', 'szl' + (isT ? ' target' : '')); clear(z.t);
-      var t1 = el('tspan', { x: hd.x + 16 }, z.t); t1.textContent = hd.name.toUpperCase();
-      var sub = isT ? 'last-known area (declared, not GPS)' : d !== null && targets.length ? d + (d === 1 ? ' step away' : ' steps away') : '';
-      if (sub) { var t2 = el('tspan', { x: hd.x + 16, dy: 13 * V.u, class: 'szl sub' }, z.t); t2.textContent = sub; z.sub = t2; } else z.sub = null;   // second line: distance to the target in the neighbourhood graph
+    s.hoods.forEach(function (hd) {   // a drawn cluster is where phones meet, not what they declare: just name it
+      var z = V.zoneEls[hd.id]; z.r.setAttribute('class', 'sz'); z.t.setAttribute('class', 'szl'); clear(z.t); var t1 = el('tspan', { x: hd.x + 16 }, z.t); t1.textContent = hd.name.toUpperCase(); z.sub = null;
     });
     /* rings, labels, the bridge affordance */
     clear(V.gR); clear(V.gL); V.scal = [];
     function ring(id, cls, r) { var n = s.nodes[id], c = el('circle', { cx: n.x, cy: n.y, class: 'sring ' + cls }, V.gR); V.scal.push({ n: c, r: r, sw: 2.2 }); return c; }
     function lab(id, text, cls, dxPx) { var n = s.nodes[id], right = n.x > 800, t = el('text', { x: n.x, y: n.y, 'text-anchor': right ? 'end' : 'start', class: 'slab ' + (cls || '') }, V.gL); t.textContent = text; V.scal.push({ n: t, f: 12.5, dx: (right ? -1 : 1) * (dxPx || 13), dy: 4, bx: n.x, by: n.y }); }
+    if (targets.length) s.order.forEach(function (i) { if (M.canRelay(i) && targets.indexOf(trustedHood(i)) >= 0 && i !== o) ring(i, 'tgt', 8); });   // phones that actually declare the last-known area
     var tracking = T.pid != null, oLabel = { emergency: 'Needs help', missing: 'Looking for a child', broadcast: 'Posted the update' }[sc];
     if (m.id === 'need' || (tracking && m.id !== 'contest' && m.id !== 'ready')) { ring(o, 'origin', 10.5); lab(o, oLabel); }
     if (m.id === 'ready') ring(o, 'origin', 10.5);
@@ -238,50 +257,59 @@
   }
   function copyFor(m, T) {
     var sc = st.scen, c = st.ctx, s = S(), A = K().A, E = API.responder(), held = T.held, relay = T.relay, g = T.pid ? X.groupsFor(T.pid) : null;
-    var out = { head: '', sub: '', metrics: [], primary: null, info: false, done: false };
-    var base = sc === 'broadcast' ? 'update' : 'request';
+    var out = { head: '', sub: '', metrics: [], primary: null, info: false, done: false }, base = sc === 'broadcast' ? 'update' : 'request', flood = T.pid && s.packets[T.pid].route.policy === 'flood';
     function playBtn() { return { label: playing() ? 'Pause' : 'Resume', fn: togglePlay, kind: 'toggle' }; }
+    var have = { v: held, l: 'of ' + relay + ' Relay phones have it' };   // "have it" includes the sender; "other phones" below does not
     switch (m.id) {
       case 'need':
         if (sc === 'emergency') { out.head = 'Mobile networks are down. Someone needs help.'; out.sub = 'A person in Hauz Khas needs medical assistance but can’t make a call.'; }
-        else if (sc === 'missing') { out.head = 'A child is missing. Nobody can phone around.'; out.sub = 'A parent in Hauz Khas is looking for a child last seen near Lodhi Colony.'; }
-        else { out.head = 'A neighbour has useful news.'; out.sub = 'A water point is open in ' + area(API.poster()) + '. It isn’t an emergency.'; }
-        out.primary = { label: sc === 'broadcast' ? 'Send update' : 'Send request', fn: actSend }; out.info = true; break;
+        else if (sc === 'missing') { out.head = 'A child is missing. Nobody can phone around.'; out.sub = 'A parent in Hauz Khas reports a child last seen near Lodhi Colony.'; }
+        else { out.head = 'A neighbour has useful news.'; out.sub = 'A neighbour reports a water collection point in ' + area(API.poster()) + '. It’s unverified.'; }
+        out.primary = { label: sc === 'broadcast' ? 'Send report' : 'Send request', fn: actSend }; out.info = true; break;
       case 'spread':
-        out.head = sc === 'missing' ? 'Relay favors phones closer to the last-known area.' : sc === 'broadcast' ? 'Updates travel the same way.' : 'One request. Passed from phone to phone.';
-        out.sub = held <= 1 ? 'It’s only on the original phone so far.' : 'The ' + base + ' reached ' + plural(held, 'phone', 'phones') + '.' + (sc === 'missing' ? ' Areas are declared by people, not GPS.' : '');
-        out.metrics = [{ v: held, l: 'of ' + relay + ' Relay phones' }]; out.primary = playBtn(); break;
+        out.head = sc === 'missing' ? 'Relay favors phones closer to the last-known area.' : sc === 'broadcast' ? 'Reports travel the same way.' : 'One request. Passed from phone to phone.';
+        out.sub = held <= 1 ? 'It’s only on the original phone so far.' : 'The ' + base + ' reached ' + plural(held - 1, 'other phone', 'other phones') + '.' + (sc === 'missing' ? ' Areas are declared by people, not GPS.' : '');
+        out.metrics = [have]; out.primary = playBtn(); break;
       case 'decision':
-        out.head = 'Relay favors phones closer to the last-known area.'; out.sub = 'This phone has two neighbours. ' + (V.decision.b.det ? 'Both get it, one as a permitted detour.' : 'One gets the request. The other doesn’t.'); out.metrics = [{ v: held, l: 'of ' + relay + ' Relay phones' }];
-        out.primary = { label: 'Continue', fn: actContinue }; break;
-      case 'gap':
+        out.head = 'Relay favors phones closer to the last-known area.'; out.sub = 'Next step: this phone has two neighbours. ' + (V.decision.b.det ? 'Both get it, one as a permitted detour.' : 'One gets the request. The other doesn’t.');
+        out.metrics = [have]; out.primary = { label: 'Continue', fn: actContinue }; break;
+      case 'gap': {
+        var gb = X.bridge(T.pid);
         out.head = 'The ' + base + ' can’t go any further.'; out.sub = 'One phone without Relay separates these groups.';
-        out.metrics = [{ v: held, l: 'received' }, { v: g.cutOff.length, l: 'Relay phones cut off' }]; out.primary = { label: 'Let this phone join Relay', fn: actAskJoin }; break;
+        out.metrics = [{ v: held, l: 'have it' }, { v: gb ? gb.unlock : g.cutOff.length, l: 'cut off behind it' }]; out.primary = { label: 'Let this phone join Relay', fn: actAskJoin }; break; }
       case 'connect': {
-        var ins = c.install, now = g.holders.length + g.reachable.length, was = ins ? ins.before.holderGroupSize : held;
-        out.head = 'A new path is open.'; out.sub = 'A route exists. Delivery hasn’t happened yet.';
-        out.metrics = [{ v: held, l: 'received' }, { v: now, l: 'phones it can now reach (was ' + was + ')' }]; out.primary = { label: 'Watch it cross', fn: actCross }; break; }
+        var ins = c.install;
+        out.head = 'A new path is open.'; out.sub = flood ? 'A route exists. Delivery hasn’t happened yet.' : 'A route exists. Nothing is delivered yet, and routing rules decide where it goes.';
+        out.metrics = [{ v: held, l: 'have it' }, { v: ins ? ins.newSet.length : 0, l: 'newly connected phones' }]; out.primary = { label: 'Watch it cross', fn: actCross }; break; }
       case 'crossing': {
         var ns = c.install ? c.install.newSet : [], got = ns.filter(function (i) { return M.nodeHas(i, T.pid); }).length;
-        out.head = 'The ' + base + ' is crossing.'; out.sub = got + ' of the ' + ns.length + ' newly reachable phones have it.'; out.metrics = [{ v: held, l: 'received' }]; out.primary = playBtn(); break; }
+        out.head = 'The ' + base + ' is crossing.'; out.sub = got ? got + ' of the ' + ns.length + ' newly connected phones have it.' : 'The bridge phone has it. None of the ' + ns.length + ' newly connected phones do yet.'; out.metrics = [{ v: held, l: 'have it' }]; out.primary = playBtn(); break; }
+      case 'stopped': {
+        var sr = m.why || X.stopReason(T.pid);
+        out.head = 'The ' + base + ' has stopped spreading.';
+        out.sub = sr.code === 'policy' ? 'Its routing rule doesn’t send it to ' + plural(sr.connected, 'connected phone', 'connected phones') + '.' : sr.code === 'complete' ? 'It reached every phone it can.' : 'No Relay link leads to the phones still without it.';
+        out.metrics = [have]; out.done = true; break; }
+      case 'expired': {
+        var ep = s.packets[m.pid], noun = ep.type === 'reply' ? 'reply' : ep.type === 'ack' ? 'acknowledgment' : base;
+        out.head = 'The ' + noun + ' expired.'; out.sub = 'It lived ' + (ep.expiresTick - ep.createdTick) + ' simulated minutes. Phones stopped passing it on.'; out.metrics = [have]; out.done = true; break; }
       case 'respond':
-        if (sc === 'missing') { out.head = 'The request reached a phone on the other side.'; out.sub = 'Its owner can send a possible sighting.'; out.primary = { label: 'Send a sighting', fn: actReply }; }
-        else { out.head = 'The request reached someone who could respond.'; out.sub = 'A person in ' + area(E) + ' has the request.'; out.primary = { label: 'Send an offer', fn: actReply }; }
+        if (sc === 'missing') { out.head = 'The request reached a phone on the other side.'; out.sub = 'Its owner may or may not reply. This demo sends an example sighting report.'; out.primary = { label: 'Send example sighting', fn: actReply }; }
+        else { out.head = 'The request reached someone who could respond.'; out.sub = 'This phone declares ' + area(E) + '. Whether to reply is its owner’s choice.'; out.primary = { label: 'Send example offer', fn: actReply }; }
         out.metrics = [{ v: held, l: 'phones have the request' }]; break;
       case 'return':
-        out.head = sc === 'missing' ? 'A possible sighting was sent.' : 'A nearby person replied.'; out.sub = sc === 'missing' ? 'It’s still travelling back.' : 'The reply is still travelling.';
+        out.head = sc === 'missing' ? 'The sighting report is on its way back.' : 'The reply is on its way back.'; out.sub = 'It may take a different route than the request did.';
         out.metrics = [{ v: held, l: 'phones have the reply' }]; out.primary = playBtn(); break;
       case 'arrived':
-        out.head = 'The reply reached the requester.'; out.sub = 'The offer is self-reported and unverified.'; out.primary = { label: 'Acknowledge the offer', fn: actAck }; break;
+        out.head = 'The reply reached the requester.'; out.sub = 'It’s an example reply from a simulated person, and it’s unverified.'; out.primary = { label: 'Acknowledge the offer', fn: actAck }; break;
       case 'ack':
-        out.head = 'The requester acknowledged the offer.'; out.sub = 'The acknowledgment is still travelling.'; out.metrics = [{ v: held, l: 'phones have it' }]; out.primary = playBtn(); break;
+        out.head = 'The requester acknowledged the offer.'; out.sub = 'The acknowledgment is still travelling. It means the offer was seen, not accepted.'; out.metrics = [{ v: held, l: 'phones have it' }]; out.primary = playBtn(); break;
       case 'done':
         out.done = true;
-        if (sc === 'missing') { out.head = 'The possible sighting reached the requester.'; out.sub = 'It’s unverified. Someone still has to check it.'; }
-        else { out.head = 'Request received. Offer returned. Acknowledgment delivered.'; out.sub = 'The offer is self-reported. Relay can’t guarantee delivery or that help arrives.'; }
+        if (sc === 'missing') { out.head = 'The sighting report reached the requester.'; out.sub = 'It’s an unverified example. Someone still has to check it.'; }
+        else { out.head = 'Request received. Offer returned. Acknowledgment delivered.'; out.sub = 'The reply is a simulated person’s example. Relay can’t guarantee delivery, replies or help.'; }
         break;
       case 'intro':
-        out.head = 'The update reached the other side.'; out.sub = 'Now an urgent request joins it at the same phone.'; out.primary = { label: 'Add the urgent request', fn: actUrgent }; break;
+        out.head = 'The report reached the other side.'; out.sub = 'Now an urgent request joins it at the same phone.'; out.primary = { label: 'Add the urgent request', fn: actUrgent }; break;
       case 'ready':
         out.head = 'Two messages. One phone.'; out.sub = 'Both want the same links.'; out.primary = { label: 'Send both onward', fn: actOnward }; break;
       case 'contest': {
@@ -307,7 +335,7 @@
       act.appendChild(h('button', { class: 's-second', id: 's-next', on: { click: function () { API.setScenario(NEXT[st.scen]); } } }, NEXT_LABEL[NEXT[st.scen]]));
       act.appendChild(h('button', { class: 's-second', id: 's-explore2', on: { click: goExplore } }, 'Explore the network'));
     }
-    var canStep = !!(API.mainPid() && ['spread', 'crossing', 'return', 'ack', 'decision'].indexOf(m.id) >= 0 && M.stats(tracked(m) || API.mainPid()).canMove);
+    var canStep = !!(API.mainPid() && ['spread', 'crossing', 'return', 'ack'].indexOf(m.id) >= 0 && M.stats(tracked(m) || API.mainPid()).canMove);   // no Step while a decision card is open: it describes the NEXT step only
     $('s-step').hidden = !canStep; $('s-step').disabled = !canStep; $('s-playpause').hidden = true;
   }
 
@@ -318,13 +346,13 @@
   function requestCard(nodeId, rid, draft) {
     var r = S().requests[rid], pl = r && r.versions.length ? S().packets[r.versions[0]].payload : null, q = pl || API.REQ[st.scen].request;
     var missing = (r ? r.kind : q.kind) === 'missing', urgent = r ? r.urgent : q.urgent;
-    return cardEl(missing ? 'Missing person' : urgent ? 'Urgent' : 'Request', missing ? 'info' : 'urgent', q.title, q.description, q.area, draft);
+    return cardEl(missing ? 'Missing person' : urgent ? 'Urgent' : 'Request', missing ? 'info' : 'urgent', q.title, q.description, missing ? 'Last seen near ' + q.area + '. Reported by the requester, not confirmed.' : q.area, draft);
   }
   function previewSpecs(m, T) {
     var sc = st.scen, c = st.ctx, A = K().A, E = API.responder(), out = [], rid = c.rid;
     function view(n) { var v = rid && M.requestView(n, rid); return v ? v.label : ''; }
     if (sc === 'broadcast') {
-      var L = API.poster(), bp = c.bpid, lt = 'Neighbour’s phone · ' + area(L);
+      var L = API.poster(), bp = c.bpid, lt = 'Neighbour’s phone · declares ' + area(L);
       if (m.id === 'need') out.push({ node: L, mode: 'full', title: lt, cards: [cardEl('Community update', 'neutral', 'Water point open', API.updateFor(L, 'update').text, API.updateFor(L, 'update').area, true)], status: 'Draft', cls: 'mute' });
       else if (m.id === 'spread' && bp) out.push({ node: L, mode: 'chip', title: lt, label: M.sentObserved(L, bp) ? 'Shared with a nearby phone' : 'Saved on this phone' });
       else if (m.id === 'ready') {
@@ -334,17 +362,17 @@
       else if (m.id === 'intro' && bp) out.push({ node: A, mode: 'full', title: 'A phone in Hauz Khas', cards: M.receivedBroadcasts(A).slice(0, 1).map(function (p) { return cardEl('Community update', 'neutral', p.payload.category + ' update', p.payload.text, p.payload.area); }), status: 'Received on this phone', cls: 'ok' });
       return out;
     }
-    if (m.id === 'need') out.push({ node: A, mode: 'full', title: 'Requester’s phone · Hauz Khas', cards: [requestCard(A, null, true)], status: 'Draft', cls: 'mute' });
+    if (m.id === 'need') out.push({ node: A, mode: 'full', title: 'Requester’s phone · declares ' + area(A), cards: [requestCard(A, null, true)], status: 'Draft', cls: 'mute' });
     else if (m.id === 'spread' && rid) out.push({ node: A, mode: 'chip', title: 'Requester’s phone', label: view(A), cards: [requestCard(A, rid)], status: view(A) });
     else if (m.id === 'respond' && rid) {
       var draft = API.replyFor(E);
-      out.push({ node: E, mode: 'full', title: 'Responder’s phone · ' + area(E), cards: [requestCard(E, rid), cardEl(sc === 'missing' ? 'Possible sighting' : 'Draft reply', 'warn', draft.kind === 'sighting' ? 'Possible sighting' : 'Offer of help', draft.note, draft.area, true)], status: view(E), cls: 'mute' });
-    } else if (m.id === 'return' && rid) out.push({ node: E, mode: 'chip', title: 'Responder’s phone · ' + area(E), label: view(E) });
+      out.push({ node: E, mode: 'full', title: 'Responder’s phone · declares ' + area(E), cards: [requestCard(E, rid), cardEl('Example reply', 'warn', draft.kind === 'sighting' ? 'Possible sighting' : 'Offer of help', draft.note, 'The owner chooses whether to send it. Relay delivers; it does not decide.', true)], status: view(E), cls: 'mute' });
+    } else if (m.id === 'return' && rid) out.push({ node: E, mode: 'chip', title: 'Responder’s phone · declares ' + area(E), label: view(E) });
     else if ((m.id === 'arrived' || m.id === 'ack' || m.id === 'done') && rid) {
-      var rep = M.repliesAt(A, rid)[0], sight = rep && rep.payload.kind === 'sighting', lbl = sight ? 'Possible sighting received' : view(A);
+      var rep = M.repliesAt(A, rid)[0], sight = rep && rep.payload.kind === 'sighting', lbl = view(A);
       if (m.id === 'arrived' || m.id === 'done') {
-        out.push({ node: A, mode: 'full', title: 'Requester’s phone', cards: [rep ? cardEl('Unverified', 'warn', sight ? 'Possible sighting' : 'Offer of help', rep.payload.note, rep.payload.area) : null].filter(Boolean), status: lbl, cls: 'ok' });
-        if (m.id === 'done' && sc !== 'missing') out.push({ node: E, mode: 'chip', title: 'Responder’s phone · ' + area(E), label: view(E) });
+        out.push({ node: A, mode: 'full', title: 'Requester’s phone', cards: [rep ? cardEl('Unverified', 'warn', sight ? 'Possible sighting' : 'Offer of help', rep.payload.note, 'From a phone that declares ' + (rep.payload.fromHood || 'an unknown area') + (rep.payload.area ? ' · ' + rep.payload.area : '')) : null].filter(Boolean), status: lbl, cls: 'ok' });
+        if (m.id === 'done' && sc !== 'missing') out.push({ node: E, mode: 'chip', title: 'Responder’s phone · declares ' + area(E), label: view(E) });
       } else out.push({ node: A, mode: 'chip', title: 'Requester’s phone', label: view(A) });
     }
     return out;
@@ -371,7 +399,7 @@
           h('div', { class: 'row' }, h('button', { class: 'go', id: 's-accept', on: { click: actJoin } }, 'Accept'), h('button', { id: 's-notnow', on: { click: function () { V.consent = false; render(); } } }, 'Not now')), h('small', {}, 'Simulated. Nothing is installed.'));
         pop.setAttribute('data-node', b); ov.appendChild(pop); V.anchored.push({ el: pop, node: b, side: 'auto' }); }
       if (pops.indexOf('decision') >= 0) { var d = V.decision, ta = X.targetNames(S().packets[T.pid].route);
-        var dp = h('div', { class: 'pop decision', id: 's-decision' }, h('b', {}, 'One phone, two neighbours'),
+        var dp = h('div', { class: 'pop decision', id: 's-decision' }, h('b', {}, 'Next step: one phone, two neighbours'),
           h('div', { class: 'cand a' }, h('strong', {}, 'A · ' + S().nodes[d.a.to].area + ' · gets it'), d.a.text),
           h('div', { class: 'cand b' }, h('strong', {}, 'B · ' + S().nodes[d.b.to].area + (d.b.det ? ' · detour' : ' · held back')), d.b.text));
         ov.appendChild(dp); V.anchored.push({ el: dp, node: d.src, side: 'auto', avoid: [d.a.to, d.b.to], strong: [d.src, d.a.to, d.b.to] }); }
@@ -406,11 +434,11 @@
   /* ================= actions (all of them call the real engine) ================= */
   function stepsOf() { return API.SCEN[st.scen].steps; }
   function playUntil() {
-    var start = moment().id;
+    var m0 = moment(), start = m0.id, active = tracked(m0) || API.mainPid();   // Story's active narrative packet; Explore's selected packet is irrelevant here
     API.play(function () {
-      if (st.scen === 'missing' && !V.decisionShown && moment().id === 'spread') { var d = findDecision(); if (d) { V.decision = d; V.decisionShown = true; return true; } }
+      if (st.scen === 'missing' && !V.decisionShown && moment().id === 'spread') { var d = X.decisionPair(API.mainPid()); if (d) { V.decision = d; V.decisionShown = true; return true; } }
       var n = moment().id; if (n === start) return false; if (start === 'connect' && n === 'crossing') { start = 'crossing'; return false; } return true;
-    });
+    }, active);
   }
   function actSend() { stepsOf()[0].run(); render(); playUntil(); }
   function togglePlay() { if (st.playing) API.pause(); else playUntil(); }
@@ -423,14 +451,6 @@
   function actUrgent() { stepsOf()[4].run(); V.sig = ''; render(); }
   function actOnward() { stepsOf()[5].run(); V.sig = ''; render(); }
   function goExplore() { var m = moment(), tp = tracked(m) || API.mainPid(); if (tp) API.select(tp); API.setMode('explore'); }
-  function findDecision() {
-    var pid = API.mainPid(); if (!pid) return null; var fr = X.frontier(pid), by = {};
-    fr.next.forEach(function (e) { var o = by[e.from] = by[e.from] || {}; if (e.code === 'closer' || e.code === 'equal' || e.code === 'same-area') { if (!o.a || (e.code === 'closer' && o.a.code !== 'closer')) o.a = e; } else if (e.det && !o.b) o.b = e; });
-    fr.held.forEach(function (e) { var o = by[e.from] = by[e.from] || {}; if (!o.b || o.b.det) o.b = e; });
-    var best = null; Object.keys(by).sort().forEach(function (src) { var o = by[src]; if (o.a && o.b && (!best || (o.a.code === 'closer' && best.a.code !== 'closer'))) best = { src: src, a: o.a, b: o.b }; });
-    return best;
-  }
-
   /* ================= hand-off dots, tips, wiring ================= */
   function onStep(rep) {
     if (reduce || st.mode !== 'story') return; var m = moment(), tp = tracked(m), s = S(), ids = {};
@@ -466,7 +486,7 @@
       if (!best) { var ed = 6; V.edgeEls.forEach(function (x) { var a = toScreen(s.nodes[x.e.from].x, s.nodes[x.e.from].y), b = toScreen(s.nodes[x.e.to].x, s.nodes[x.e.to].y), dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1, k = Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / L2)), d = Math.hypot(a.x + k * dx - px, a.y + k * dy - py); if (d < ed) { ed = d; best = { t: 'e', a: x.e.from, b: x.e.to }; } }); }
       if (!best) { hideTip(); return; }
       if (best.t === 'n') { var n = s.nodes[best.id], has = T.pid && M.nodeHas(best.id, T.pid), inb = has && s.inbox[best.id][T.pid];
-        showTip(px, py, X.nm(best.id), n.area + ' · ' + (M.canRelay(best.id) ? 'Relay on' : 'No Relay') + (T.pid && M.canRelay(best.id) ? (has ? (inb && inb.via ? ' · got it from ' + X.nm(inb.via) : ' · started here') : ' · hasn’t received it') : '')); }
+        showTip(px, py, X.nm(best.id), 'Declares ' + n.area + (clusterOf(best.id) && clusterOf(best.id) !== n.area ? ' (drawn with the ' + clusterOf(best.id) + ' cluster)' : '') + ' · ' + (M.canRelay(best.id) ? 'Relay on' : 'No Relay') + (T.pid && M.canRelay(best.id) ? (has ? (inb && inb.via ? ' · got it from ' + X.nm(inb.via) : ' · started here') : ' · doesn’t have it yet') : '')); }
       else showTip(px, py, X.nm(best.a) + ' ↔ ' + X.nm(best.b), whyFor(best.a, best.b, T));
     });
     svg.addEventListener('pointerleave', hideTip);
@@ -475,6 +495,7 @@
   /* ================= main render ================= */
   function render() {
     if (st.mode !== 'story' || !V.built) return;
+    if (V.decision && V.decision.tick !== S().tick) V.decision = X.decisionPair(V.decision.pid);   // the engine moved (Step, Explore, anything): never show an old plan as the current one
     var m = moment(); if (m.id !== 'contest') V.wide = false; if (m.id !== 'gap') V.consent = false;
     var T = trackInfo(tracked(m), m), cp = copyFor(m, T); V.m = m; V.T = T;
     document.body.setAttribute('data-moment', m.id);
@@ -483,8 +504,10 @@
     renderOverlays(m, T);
     var sc = $('s-scenario'); if (sc.value !== st.scen) sc.value = st.scen;
     var key = $('s-key'); clear(key);
-    if (m.id === 'need') { $('s-key').hidden = true; return; } $('s-key').hidden = false;   // nothing can be "received" yet, so no key on the first screen
-    [['', 'Not yet received'], ['held', 'Received'], ['off', 'No Relay']].concat(T.kind === 'rep' && T.pid ? [['rep', 'Has the reply']] : [], m.id === 'connect' || m.id === 'crossing' ? [['reach', 'Reachable, not received']] : [], m.id === 'gap' ? [['cut', 'Cut off']] : [])
+    var tg = sc0() === 'missing', tgEntry = tg ? [['tgt', 'Declares Lodhi Colony']] : [];
+    if (m.id === 'need') { key.hidden = !tg; if (tg) tgEntry.forEach(function (x) { key.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); }); $('s-note').hidden = false; return; }   // nothing can be "received" yet
+    key.hidden = false; $('s-note').hidden = false;
+    [['', 'Not yet received'], ['held', 'Has it'], ['off', 'No Relay']].concat(T.kind === 'rep' && T.pid ? [['rep', 'Has the reply']] : [], m.id === 'connect' || m.id === 'crossing' ? [['reach', 'Connected, not received']] : [], m.id === 'gap' ? [['cut', 'Cut off']] : [], tgEntry)
       .forEach(function (x) { key.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
   }
 

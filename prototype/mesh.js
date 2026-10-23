@@ -497,6 +497,15 @@
   }
   function myReplies(nodeId, rid) { return repliesAt(nodeId, rid).filter(function (p) { return p.originNodeId === nodeId; }); }
 
+  /* A reply is either an offer of help or a possible sighting. Statuses must say which, and say only what this phone knows. */
+  var REPLY_WORDS = {
+    offer:    { saved: 'Offer saved on this phone', forwarded: 'Offer forwarded to a nearby phone', received: 'Offer received', acknowledged: 'Offer acknowledged', ackedByRequester: 'Requester acknowledged the offer',
+                note: 'An offer is not proof that help has arrived.', ackNote: 'Acknowledged means the requester saw it. It does not confirm anyone has been helped.' },
+    sighting: { saved: 'Possible sighting saved on this phone', forwarded: 'Sighting report forwarded to a nearby phone', received: 'Possible sighting received', acknowledged: 'Sighting acknowledged', ackedByRequester: 'Requester acknowledged the sighting',
+                note: 'A possible sighting is unverified. Someone still has to check it.', ackNote: 'Acknowledged means the requester saw it. It does not confirm anyone was found.' }
+  };
+  function replyWords(kind) { return REPLY_WORDS[kind === 'sighting' ? 'sighting' : 'offer']; }
+
   /* What THIS phone can truthfully say about a case. */
   function requestView(nodeId, rid) {
     var r = S.requests[rid], cs = caseState(nodeId, rid);
@@ -505,7 +514,7 @@
     if (author) {
       var reps = repliesAt(nodeId, rid), acked = reps.some(function (p) { return ackedBy(nodeId, p.id); });
       if (cs.resolved) { v.label = 'Resolved on this phone'; v.tone = 'ok'; }
-      else if (reps.length) { v.label = acked ? 'Offer acknowledged' : 'Offer received'; v.tone = 'ok'; v.note = 'An offer is not proof that help has arrived.'; }
+      else if (reps.length) { var rw = replyWords(reps[reps.length - 1].payload.kind); v.label = acked ? rw.acknowledged : rw.received; v.tone = 'ok'; v.note = rw.note; }
       else if (expired) { v.label = 'Expired'; v.tone = 'warn'; v.note = 'No longer being passed along. Renew it if you still need help.'; }
       else if (sentObserved(nodeId, cs.packet.id)) { v.label = 'Shared with a nearby phone'; v.tone = 'info'; v.note = 'No response has reached this phone yet.'; }
       else if (peers(nodeId) > 0) { v.label = 'Saved on this phone'; v.note = 'Waiting to pass it to a nearby phone.'; }
@@ -513,10 +522,10 @@
     } else {
       var mine = myReplies(nodeId, rid);
       if (cs.resolved) { v.label = 'Resolved by requester'; v.tone = 'ok'; }
-      else if (mine.some(function (p) { return acksAt(nodeId, p.id).length; })) { v.label = 'Requester acknowledged your offer'; v.tone = 'ok'; v.note = 'This does not confirm anyone has been helped.'; }
+      else if (mine.some(function (p) { return acksAt(nodeId, p.id).length; })) { var aw = replyWords(mine[mine.length - 1].payload.kind); v.label = aw.ackedByRequester; v.tone = 'ok'; v.note = aw.ackNote; }
       else if (mine.length) {
         var sent = mine.some(function (p) { return sentObserved(nodeId, p.id); });
-        v.label = sent ? 'Your offer was shared onward' : 'Your offer is saved on this phone'; v.tone = 'info';
+        var mw = replyWords(mine[mine.length - 1].payload.kind); v.label = sent ? mw.forwarded : mw.saved; v.tone = 'info';
         v.note = 'You will not be told when it arrives, only if the requester acknowledges.';
       }
       else if (expired) { v.label = 'Expired'; v.tone = 'warn'; }
@@ -575,7 +584,7 @@
     createRequest: createRequest, createBroadcast: createBroadcast, createReply: createReply, createAck: createAck, createResolve: createResolve,
     renewRequest: renewRequest, attachPhoto: attachPhoto, shareAddress: shareAddress, addressSharedFor: addressSharedFor, sharedAddressAt: sharedAddressAt,
     ownAddress: ownAddress, photoOf: photoOf, isResolvedFor: isResolvedFor, ackedBy: ackedBy, step: step, join: join, sharers: sharers,
-    peers: peers, sentObserved: sentObserved, receivedRequests: receivedRequests, receivedCases: receivedCases, receivedBroadcasts: receivedBroadcasts,
+    peers: peers, replyWords: replyWords, sentObserved: sentObserved, receivedRequests: receivedRequests, receivedCases: receivedCases, receivedBroadcasts: receivedBroadcasts,
     caseState: caseState, latestHeld: latestHeld, repliesAt: repliesAt, acksAt: acksAt, myReplies: myReplies, requestView: requestView,
     setHidden: setHidden, setNotRelevant: setNotRelevant, stats: stats, canReach: canReach, coverage: coverage, participating: participating,
     components: function (on) { return components(S.order.map(function (id) { return { id: id }; }), S.edges, on); },

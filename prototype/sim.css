@@ -119,3 +119,4 @@ button,select{font:inherit;color:inherit}button{cursor:pointer}[hidden]{display:
 .bar{gap:10px 12px;padding:8px 16px}#scenario{min-width:200px}.simtag{font-size:11.5px;padding:4px 10px}
 .legend{gap:4px 14px;padding:7px 12px;font-size:12px}
 .foot{padding:5px 20px 8px;font-size:12px;line-height:1.35}
+.n.withheld{fill:#fff;stroke:#c47b00}.sw.withheld{border:2px dashed #c47b00;background:#fff}.ring.tgt{stroke:#7a3fd0}

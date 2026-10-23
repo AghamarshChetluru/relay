@@ -34,7 +34,16 @@ else if(s==='b3'){primary();until(function(){return mom()==='intro'||mom()==='ga
 else if(s==='b4'){toConnect();click('#s-primary');API.pause();until(function(){return mom()==='intro'})}
 else if(s==='b5'){toConnect();click('#s-primary');API.pause();until(function(){return mom()==='intro'});click('#s-primary')}
 else if(s==='b6'){toConnect();click('#s-primary');API.pause();until(function(){return mom()==='intro'});click('#s-primary');click('#s-primary')}
+else if(s==='mg'||s==='mc'||s==='mr'||s==='mrp'||s==='md'){click('#s-primary');API.pause();for(var i=0;i<400&&mom()!=='gap';i++){if(mom()==='decision')click('#s-primary');else{API.pause();API.doStep()}}
+  if(s!=='mg'){click('#s-primary');click('#s-accept')}
+  if(s==='mr'||s==='mrp'||s==='md'){click('#s-primary');API.pause();until(function(){return mom()==='respond'||mom()==='intro'})}
+  if(s==='mrp'||s==='md'){click('#s-primary');API.pause();until(function(){return mom()==='arrived'})}
+  if(s==='md'){click('#s-primary');API.pause();until(function(){return mom()==='done'})}}
+else if(s==='bc'||s==='bd'){click('#s-primary');API.pause();until(function(){return mom()==='gap'});click('#s-primary');click('#s-accept');click('#s-primary');API.pause();for(var i=0;i<300&&mom()!=='done'&&(s==='bd'||mom()!=='intro');i++){if(mom()==='intro'||mom()==='respond'){click('#s-primary');API.pause()}else{API.pause();API.doStep()}}}
+else if(s==='z1'){primary();var ep=API.mainPid();for(var i=0;i<200&&!M.isExpired(M.state().packets[ep]);i++){API.pause();API.doStep()}}
+else if(s==='a1'){API.setScenario('missing');click('#s-primary');API.pause();for(var i=0;i<40&&mom()!=='decision';i++){await sleep(100)}API.pause();API.doStep();API.doStep()}
+else if(s==='r1'){toRespond();click('#s-primary');API.pause();until(function(){return mom()==='arrived'});click('#s-to-explore');await sleep(200);click('#to-story');await sleep(200)}
 else if(s==='x1'){API.setScenario('emergency');click('#btn-do');steps(4)}
-document.title='READY '+s+' '+(w.RelayStory?w.RelayStory.moment().id:'');
+document.title='READY '+s+' '+(w.RelayStory?w.RelayStory.moment().id:'')+' tick='+M.state().tick+' holders='+(API.mainPid()?M.holders(API.mainPid()).length:0);
 }
 </script></body></html>
