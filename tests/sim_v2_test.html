@@ -40,7 +40,7 @@ var t0=S().tick;click('#btn-pause');await sleep(2500);ok(Q('#btn-pause').disable
 click('#btn-do');ok(await waitFor(function(){return /Stalled/.test(T('#sim-head'))},60000),'Play runs until the network stalls by itself');
 var st1=M.stats(pid);
 ok(!M.nodeHas(K().E,pid)&&T('#m-held')===String(st1.held)&&/Unreachable now/.test(T('#m-dest')),'clinic volunteer NOT reached; destination shown unreachable');
-ok(QA('#net .ring.pulse').length===1&&/Crossroads phone/.test(T('#net')),'gap phone marked');
+ok(QA('#net .ring.gap').length===1&&/Crossroads phone/.test(T('#net')),'gap phone marked (static ring, no pulsing animation)');
 ok(Number(Q('#m-cut').lastChild.textContent)>0,'cut-off count shown: '+Q('#m-cut').lastChild.textContent);
 ok(S().order.every(function(i){return S().nodes[i].hasApp||!M.nodeHas(i,pid)}),'no phone without Relay holds the message');
 ok(QA('#net circle.n.off.has').length===0,'non-Relay nodes never drawn as having it');

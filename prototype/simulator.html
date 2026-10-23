@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Relay network simulator (prototype)</title>
+<title>Relay network simulator</title>
 <link rel="stylesheet" href="sim.css">
 </head>
 <body class="simpage">
@@ -14,20 +14,26 @@
     <button class="btn primary" id="btn-play"></button><button class="btn" id="btn-pause"></button><button class="btn" id="btn-step"></button><button class="btn" id="btn-reset"></button>
   </div>
   <label class="ctl">Speed <select id="speed" aria-label="Simulation speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+  <span class="simtag" id="simtag">Simulation · not real Bluetooth</span>
 </header>
 <main class="stage">
   <section class="canvaswrap" id="canvaswrap">
-    <svg id="net" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Network of 80 simulated phones in six neighborhoods. A text summary is in the side panel."></svg>
+    <div class="canvashead"><span class="schem" id="schematic">Schematic network of 80 simulated phones · not a map of Delhi<small class="hint">Scroll to zoom · drag to pan · click a phone to inspect it</small></span>
+      <div class="focusctl" role="group" aria-label="View"><button id="focus-city" class="seg on" aria-pressed="true">City</button><button id="focus-area" class="seg" aria-pressed="false">Neighbourhood</button><button id="focus-phone" class="seg" aria-pressed="false">Phone</button></div></div>
+    <svg id="net" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Network of 80 simulated phones in six neighborhoods. The side panel explains, in text, what is happening and why."></svg>
     <div class="zoomctl"><button id="z-in" aria-label="Zoom in"></button><button id="z-out" aria-label="Zoom out"></button><button id="z-fit" aria-label="Fit whole network"></button></div>
-    <div class="hint">Scroll to zoom · drag to pan · click a phone for details</div>
     <div class="tip" id="tip" hidden></div>
     <div class="legend" id="legend"></div>
   </section>
-  <aside class="side" id="side" aria-live="polite"></aside>
+  <aside class="sidewrap">
+    <div class="tabs" role="tablist" aria-label="Side panel"><button role="tab" id="tab-walk" aria-selected="true" aria-controls="side">Walkthrough</button><button role="tab" id="tab-inspect" aria-selected="false" aria-controls="side">Inspect</button></div>
+    <div class="side" id="side" role="tabpanel" aria-live="polite"></div>
+  </aside>
 </main>
-<footer class="foot"><strong>Simulation · no real Bluetooth.</strong> Conceptual store-and-forward simulation. The proposed product would pass messages over short-range phone-to-phone radio links (for example Bluetooth LE); none of that is implemented here. Every number on this page is computed from the simulated network.</footer>
+<footer class="foot"><strong>Simulation · no real Bluetooth.</strong> This browser page is a deterministic, conceptual store-and-forward model. Simulated minutes are not predictions of real delivery time, and positions are schematic, not geographic. The Android app's real radio behaviour is tested separately. Every number on this page is computed from the simulated network.</footer>
 <div class="modalroot" id="modalroot" hidden><div class="backdrop" id="mback"></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle" id="modal" tabindex="-1"><h2 id="mtitle"></h2><div id="mbody"></div></div></div>
 <script src="mesh.js"></script>
+<script src="sim_explain.js"></script>
 <script src="sim.js"></script>
 </body>
 </html>

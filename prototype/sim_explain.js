@@ -11,7 +11,7 @@
   /* ---------- names ---------- */
   function nm(id) { var n = S().nodes[id]; return n.key ? n.label : 'Phone ' + id; }
   function area(id) { return S().nodes[id].area || 'unknown area'; }
-  function who(id) { var n = S().nodes[id]; return nm(id) + (n.key ? '' : '') + ' (' + area(id) + ')'; }
+  function who(id) { var n = S().nodes[id]; return n.key ? nm(id) : nm(id) + ' (' + area(id) + ')'; }
   function trusted(id) { var h = M.hoodState(id); return h.reliable ? h.id : null; }     // what routing is allowed to trust: a recently confirmed declared area
   function hoodName(hid) { var o = M.NEIGHBORHOODS.filter(function (x) { return x.id === hid; })[0]; return o ? o.name : hid; }
   function targetNames(rt) { return (rt.targets || []).map(hoodName).join(' / '); }

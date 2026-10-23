@@ -1,0 +1,103 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+/* Simulator v3 checks: explanation, truthfulness of what is drawn, controls, accessibility, offline. usage: sim_v3_test.html?w=1440&h=900&src=/abs/simulator.html */
+var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src');
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC;document.body.appendChild(fr);
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+fr.onload=function(){setTimeout(function(){run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'})},300)};
+async function run(){
+var w=fr.contentWindow,d=w.document,M=w.Mesh,X=w.SimExplain,R=w.RelaySim,errs=[];w.addEventListener('error',function(e){errs.push(e.message)});
+function Q(s){return d.querySelector(s)}function QA(s){return [].slice.call(d.querySelectorAll(s))}function click(s){var e=typeof s==='string'?Q(s):s;if(!e)throw new Error('missing '+s);e.click()}
+function T(s){var e=Q(s);return e?e.textContent:''}function S(){return M.state()}function K(){return S().keys}
+function chg(sel,v){var e=Q(sel);e.value=v;e.dispatchEvent(new w.Event('change',{bubbles:true}))}
+async function waitFor(f,ms){var t=0;while(!f()&&t<(ms||60000)){await sleep(200);t+=200}return f()}
+function untilStall(){for(var i=0;i<300&&M.stats(R.state.pid).canMove;i++)click('#btn-step')}
+var reduced=w.matchMedia('(prefers-reduced-motion: reduce)').matches,vw=d.documentElement.clientWidth;
+/* ===== structure and the seven questions ===== */
+ok(/Mobile networks are down/.test(T('#situation'))&&/needs a doctor/.test(T('#situation')),'Q1 problem: the situation card says who needs what and why');
+ok(QA('#phases li').length===5&&/Create/.test(T('#phases'))&&/Outcome/.test(T('#phases')),'walkthrough phases: Create, Spread, Obstacle, Change, Outcome');
+ok(/Schematic network/.test(T('#schematic'))&&/not a map/.test(T('#schematic'))&&/not real Bluetooth/.test(T('#simtag')),'canvas labelled schematic, simulation tag always visible');
+ok(QA('#legend span').length>=12,'legend explains node states and line types ('+QA('#legend span').length+' entries)');
+click('#btn-do');var pid=R.state.pid,s0=S();
+ok(/Medical help needed near Hauz Khas/.test(T('#msgcard'))&&/Urgent/.test(T('#msgcard'))&&T('#m-holders')==='Held by 1 Relay phone: My phone (the origin)','Q2 message card shows the engine request text and who holds it');
+ok(s0.requests[Object.keys(s0.requests)[0]].title===X.packetInfo(pid).title,'message card text is the engine request, not presentation text');
+var fr0=X.frontier(pid);ok(QA('#net line.e.next').length===fr0.next.length*1&&fr0.next.length>0,'Q4 before any step: dashed "will move next" links equal the engine plan ('+fr0.next.length+')');
+ok(/Next step/.test(T('#why'))&&/every Relay neighbour/.test(T('#why')),'why: policy reason shown before the first hand-off');
+/* ===== animation = engine events only ===== */
+chg('#speed','1');click('#btn-step');var moves=S().lastHops.filter(function(m){return m.packetId===pid});
+if(!reduced){ok(R.state.anims.length===moves.length&&moves.length>0,'one animated packet per real hand-off ('+R.state.anims.length+' vs '+moves.length+')');
+ ok(R.state.anims.every(function(a){return moves.some(function(m){return S().nodes[m.from]===a.a&&S().nodes[m.to]===a.b})}),'every animated packet runs along an actual hand-off edge');}
+else ok(R.state.anims.length===0&&QA('#net circle.packet').length===0,'reduced motion: no moving packets (still-state edges only)');
+ok(QA('#net line.e.hop').length===moves.length,'moved-this-step highlight equals engine lastHops ('+moves.length+')');
+var pathN=QA('#net line.e.path').length,holders=M.holders(pid).length;ok(pathN===holders-1,'path layer: one history edge per receiving phone ('+pathN+' = '+(holders-1)+')');
+ok(/Last step/.test(T('#why'))&&/hand-off/.test(T('#why')),'Q3/Q4 after a step: hand-offs listed with their reason');
+ok(QA('#net circle.n.has').length===holders&&QA('#net circle.n.off.has').length===0,'nodes drawn as holding = engine holders; never a no-Relay phone');
+/* pause stops the clock and the animation; speed changes the rate */
+chg('#speed','4');click('#btn-do');ok(R.state.playing,'Play running');var t0=S().tick;await sleep(1500);var fast=S().tick-t0;click('#btn-pause');
+ok(R.state.anims.length===0&&QA('#net circle.packet').length===0,'Pause also clears presentation animation');var tp=S().tick;await sleep(1500);ok(S().tick===tp,'Pause halts the simulation clock');
+chg('#speed','0.5');R.state.playing=false;click('#btn-play');var t1=S().tick;await sleep(3000);var slow=S().tick-t1;click('#btn-pause');
+ok(fast>slow,'speed control works: 4x advanced '+fast+' minutes, 0.5x advanced '+slow);chg('#speed','4');
+/* ===== obstacle: stall, groups, reachable != received ===== */
+untilStall();var st=M.stats(pid),g=X.groupsFor(pid);
+ok(/Stalled/.test(T('#sim-head'))&&/cut off, not slow/.test(T('#gap-why')),'Q5 stalled: panel names the gap phone and says the other side is cut off');
+ok(QA('#net line.e.next').length===0&&QA('#net .ring.gap').length===1,'stalled: no "will move next" links; one gap marker');
+ok(T('#r-held')===String(g.holders.length)&&T('#r-cut')===String(g.cutOff.length)&&T('#r-reach')==='0'&&T('#r-norelay')===String(g.noRelay.length),'received / could still receive / cut off / no Relay all equal engine groups');
+ok(QA('#net circle.n.cut').length===g.cutOff.length&&QA('#net circle.n.has').length===g.holders.length,'cut-off phones drawn differently from holders');
+ok(S().order.every(function(i){return !M.nodeHas(i,pid)||M.canRelay(i)})&&!M.nodeHas(K().E,pid),'bridge really blocks: no phone beyond the gap holds it');
+ok(/Possible responder/.test(T('#net'))&&/Unreachable now/.test(T('#m-dest')),'volunteer is a "possible responder", not the addressee');
+/* ===== change: connected / reachable / received are three different numbers ===== */
+var heldBefore=M.holders(pid).length,groupsBefore=M.coverage().groups;
+click('#btn-do');ok(/would link/.test(T('#inst-effect')),'Q6 install dialog says what installing would connect');click('#inst-send');click('#inst-accept');
+ok(M.holders(pid).length===heldBefore&&T('#m-held')===String(heldBefore),'right after install NOTHING is received yet (received stays '+heldBefore+')');
+ok(Number(T('#r-reach'))>0&&Number(T('#r-reach'))===X.groupsFor(pid).reachable.length,'but "could still receive" jumps to '+T('#r-reach')+' (engine reachable)');
+ok(M.coverage().groups<groupsBefore&&/Relay groups: \d+ → \d+/.test(T('#changedcard')),'groups merge and the change card says so');
+ok(QA('#net line.e.next').length>0&&/Newly connected/.test(T('#changedcard'))&&/Newly reachable/.test(T('#changedcard'))&&/Actually received since/.test(T('#changedcard')),'change card separates connected / reachable / actually received');
+ok(/crossroads phone/i.test(T('#changedcard')),'change card names the bridge phone');
+var newSet=S()&&X.groupsFor(pid).reachable.slice();click('#btn-do');await waitFor(function(){return M.nodeHas(K().E,pid)},60000);
+ok(M.nodeHas(K().E,pid)&&newSet.some(function(i){return M.nodeHas(i,pid)}),'then packets actually cross and phones receive in steps');
+click('#btn-pause');
+var got=newSet.filter(function(i){return M.nodeHas(i,pid)}).length;ok(new RegExp('Actually received since[\\s\\S]*'+got+' of those '+newSet.length).test(T('#changedcard')),'card live count matches engine ('+got+' of '+newSet.length+')');
+/* ===== outcome ===== */
+click('#btn-do');var rp=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='reply'})[0];
+ok(/Offer of help/.test(T('#outcomecard'))&&/Unverified/.test(T('#outcomecard'))&&/nurse/.test(T('#outcomecard')),'Q7 reply card shows the engine reply, labelled unverified');
+click('#btn-do');await waitFor(function(){return M.nodeHas(K().A,rp)},60000);click('#btn-pause');ok(/Reached the requester through \d+ hand-offs/.test(T('#outcome-state')),'reply path length computed from engine via-chain');
+ok(X.chain(rp,K().A)[0]===K().E&&/via \d+ phones/.test(T('#outcome-state')),'reply chain starts at the volunteer');
+click('#btn-do');var ak=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='ack'})[0];await waitFor(function(){return M.nodeHas(K().E,ak)},60000);click('#btn-pause');
+ok(/A request travelled\. Someone responded\. Coordination became possible\./.test(T('#outcome-close'))&&/does not show that anyone was helped/.test(T('#outcome-close')),'closing line is honest: no claim of rescue');
+ok(!/rescued|saved|safe\b|alive|delivered successfully|guarantee[sd]? /i.test(T('#side').replace(/cannot promise|Nothing here is guaranteed to arrive|guarantee/gi,'')),'no rescue/safety/guarantee claims in the panel');
+/* ===== inspect tab ===== */
+click('#tab-inspect');ok(!!Q('#msginspect')&&/flood/.test(T('#msginspect'))&&/Link capacity/.test(T('#msginspect')),'Inspect: policy, hop limit, fan-out, link capacity from the engine');
+chg('#phonepick',K().D);ok(R.state.sel===K().D&&/Crossroads phone/.test(T('#devcard'))&&!!Q('#nbrs'),'keyboard-accessible phone picker selects a phone and lists neighbour decisions');
+ok(!!Q('#steplog')&&QA('#steplog li').length>0,'step-by-step history lists real steps');click('#tab-walk');
+ok(QA('#tabs,[role=tab]').length===2||QA('[role=tab]').length===2,'tabs are real buttons with aria roles');
+/* ===== views ===== */
+R.state.sel=K().A;click('#focus-phone');var vb=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(vb[2]<=240&&R.state.focus==='phone','Phone view zooms in on one phone');ok(QA('#net text.nl').length>0&&QA('#net text.nl').length<40,'semantic zoom: phone ids appear only when zoomed in ('+QA('#net text.nl').length+')');
+click('#focus-area');vb=Q('#net').getAttribute('viewBox').split(' ').map(Number);var zz=S().hoods.filter(function(x){return x.id===S().nodes[K().A].zone})[0];
+ok(vb[2]<1000&&vb[0]<=zz.x&&vb[1]<=zz.y&&vb[0]+vb[2]>=zz.x+zz.w&&vb[1]+vb[3]>=zz.y+zz.h&&R.state.focus==='area','Neighbourhood view frames the whole cluster of the selected phone, and less than the city');
+click('#focus-city');vb=Q('#net').getAttribute('viewBox').split(' ').map(Number);ok(vb[2]===1000&&QA('#net text.nl').length===0,'City view restores the whole network');
+/* ===== missing person ===== */
+chg('#scenario','missing');click('#btn-do');var mp=R.state.pid;
+ok(/TARGET AREA/.test(T('#net'))&&/STEPS? AWAY/.test(T('#net'))&&QA('#net rect.zone.target').length===1,'target neighbourhood marked; other zones labelled with steps away');
+ok(!!Q('#hoodcard')&&/not kilometres, and not GPS/.test(T('#hoodcard'))&&QA('#hoodcard circle:not(.ring0)').length===10,'neighbourhood graph card: 10 localities, "not GPS"');
+var seen={};for(var i=0;i<60&&M.stats(mp).canMove;i++){click('#btn-step');var wl=QA('#why li').map(function(x){return x.textContent}).join(' ');['Closer to the target','Equally close','Same-area forwarding','Permitted detour','Not forwarded'].forEach(function(k){if(wl.indexOf(k)>=0)seen[k]=1});}
+ok(Object.keys(seen).length>=2,'missing person: reasons shown from the neighbourhood graph ('+Object.keys(seen).join(', ')+')');
+ok(/steered toward Lodhi Colony/i.test(T('#msgcard')),'policy sentence names the target area, no coordinates');
+var hh=X.hoodGraph(mp);ok(hh.rows.filter(function(r){return r.id==='LC'})[0].dist===0&&QA('#hood-table tr').length>=2,'hood table counts come from the engine');
+ok(!/GPS (location|position|coordinates) (is|are) used|satellite/i.test(T('#side'))||/not GPS/.test(T('#side')),'no GPS routing claims');
+/* ===== broadcast priority ===== */
+chg('#scenario','broadcast');click('#btn-do');untilStall();click('#btn-do');click('#inst-send');click('#inst-accept');
+var bp=R.state.pid;for(var j=0;j<300&&!M.nodeHas(K().A,bp);j++)click('#btn-step');click('#btn-do');
+ok(!!Q('#prioritycard')&&/priority 0/.test(T('#prioritycard'))&&/priority 2/.test(T('#prioritycard')),'priority card quotes engine priorities (urgent 0, update 2)');
+ok(/Press Step/.test(T('#prioritycard')),'before stepping it asks the viewer to step, rather than claiming ordering');
+click('#btn-do');ok(/busy-link moment/.test(T('#prio-summary'))&&/went first/.test(T('#prio-list')),'after a step: real contested links are listed');
+var m=T('#prio-summary').match(/higher-priority message went first in (\d+) of (\d+)/);ok(m&&m[1]===m[2]&&+m[2]>0,'higher-priority message went first every time ('+(m&&m[1])+' of '+(m&&m[2])+')');
+/* ===== offline / privacy / accessibility ===== */
+var res=[].slice.call(d.scripts).map(function(x){return x.src}).concat([].slice.call(d.querySelectorAll('link[href],img[src],iframe[src],source[src]')).map(function(x){return x.href||x.src}));ok(res.length>=4&&res.every(function(n){return /^file:/.test(n)}),'only local files referenced: '+res.map(function(n){return n.split('/').pop()}).join(', '));
+var html=d.documentElement.outerHTML;ok(!/https?:\/\/(?!www\.w3\.org)/.test(html.replace(/xmlns="[^"]*"/g,'')),'no external URLs in the page');
+ok(d.documentElement.scrollWidth<=vw+1,'no horizontal overflow @'+vw);
+var cs=w.getComputedStyle(Q('#net circle.packet')||Q('#btn-play'));if(reduced)ok(QA('*').every(function(e){var c=w.getComputedStyle(e);return c.animationName==='none'||!c.animationName}),'reduced motion: no CSS animations anywhere');
+ok(QA('button,select,[tabindex]:not(#modal)').every(function(e){return e.tabIndex>=0}),'all controls are keyboard-focusable (the dialog container is focused by script only)');
+ok(QA('#net circle.n').length===80&&S().order.length===80&&QA('#net line.e').length===S().edges.length,'still the engine\'s 80 phones and '+S().edges.length+' links');
+ok(!/BLE connected|Bluetooth connected/i.test(d.body.textContent),'no fake hardware claims');
+ok(errs.length===0,'no runtime errors: '+errs.join(';'));
+}
+</script></body></html>

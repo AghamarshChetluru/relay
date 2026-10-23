@@ -1,0 +1,41 @@
+<!DOCTYPE html><html><body style="margin:0;background:#fff"><script>
+/* Drives the real simulator to a named state (using only its own buttons and the engine) so a headless browser can screenshot it.
+   usage: sim_shots.html?s=<state>&w=1440&h=900&src=/abs/path/simulator.html */
+var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src'),STATE=q.get('s')||'e0',REDUCE=q.get('reduce');
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';fr.src='file://'+SRC;document.body.appendChild(fr);
+fr.onload=function(){setTimeout(function(){try{go()}catch(e){document.title='ERR '+e.message+' '+(e.stack||'').split('\n')[1]}},300)};
+function go(){
+var w=fr.contentWindow,d=w.document,M=w.Mesh;function Q(s){return d.querySelector(s)}function click(s){var e=typeof s==='string'?Q(s):s;if(!e)throw new Error('missing '+s);e.click()}
+function K(){return M.state().keys}function chg(sel,v){var e=Q(sel);e.value=v;e.dispatchEvent(new w.Event('change',{bubbles:true}))}
+function steps(n){for(var i=0;i<n;i++)click('#btn-step')}
+function pid(){var s=M.state(),k=Object.keys(s.requests)[0];return k?s.requests[k].packetId:Object.keys(s.packets)[0]}
+function untilStall(){for(var i=0;i<300&&M.stats(w.RelaySim.state.pid).canMove;i++)click('#btn-step')}
+function untilHas(id){for(var i=0;i<300&&!M.nodeHas(id,w.RelaySim.state.pid);i++)click('#btn-step')}
+function install(){click('#btn-do');click('#inst-send');click('#inst-accept')}
+function untilReach(p,id){for(var i=0;i<300&&!M.nodeHas(id,p);i++)click('#btn-step')}
+var s=STATE;
+if(/^m/.test(s))chg('#scenario','missing');if(/^b/.test(s))chg('#scenario','broadcast');
+if(s==='e0'||s==='m0'||s==='b0'){}
+else if(s==='e1'){click('#btn-do')}
+else if(s==='e2'){click('#btn-do');steps(3)}
+else if(s==='e3'){click('#btn-do');untilStall()}
+else if(s==='e3d'){click('#btn-do');untilStall();click('#btn-do')}
+else if(s==='e4'){click('#btn-do');untilStall();install()}
+else if(s==='e5'){click('#btn-do');untilStall();install();steps(4)}
+else if(s==='e6'){click('#btn-do');untilStall();install();untilHas(K().E);click('#btn-do')}
+else if(s==='e7'){click('#btn-do');untilStall();install();untilHas(K().E);click('#btn-do');var rp=Object.keys(M.state().packets).filter(function(k){return M.state().packets[k].type==='reply'})[0];untilReach(rp,K().A);click('#btn-do');var ak=Object.keys(M.state().packets).filter(function(k){return M.state().packets[k].type==='ack'})[0];untilReach(ak,K().E)}
+else if(s==='e8'){click('#btn-do');steps(3);w.RelaySim.state.sel=K().A;click('#tab-inspect')}
+else if(s==='e9'){click('#btn-do');untilStall();w.RelaySim.state.sel=K().D;click('#tab-inspect')}
+else if(s==='m1'){click('#btn-do');steps(2)}
+else if(s==='m3'){click('#btn-do');untilStall()}
+else if(s==='m5'){click('#btn-do');untilStall();install();steps(6)}
+else if(s==='m7'){click('#btn-do');untilStall();install();untilHas(K().E);click('#btn-do');var sp=Object.keys(M.state().packets).filter(function(k){return M.state().packets[k].type==='reply'})[0];untilReach(sp,K().A)}
+else if(s==='m8'){click('#btn-do');steps(3);w.RelaySim.state.sel=K().A;click('#tab-inspect')}
+else if(s==='b1'){click('#btn-do');steps(3)}
+else if(s==='b3'){click('#btn-do');untilStall()}
+else if(s==='b5'){click('#btn-do');untilStall();install();untilReach(w.RelaySim.state.pid,K().A);click('#btn-do');steps(2)}
+else if(s==='zoom'){click('#btn-do');steps(3);w.RelaySim.state.sel=K().A;click('#tab-inspect');click('#focus-phone')}
+else if(s==='area'){click('#btn-do');steps(3);click('#focus-area')}
+document.title='READY '+s;
+}
+</script></body></html>
