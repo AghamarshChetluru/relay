@@ -130,17 +130,20 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         override fun onScanFailed(errorCode: Int) { scanning = false; lastError = "Scan failed ($errorCode)"; onStatus() }
     }
     private var burstUntil = 0L
-    private fun scheduleScan(delay: Long) {
-        h.postDelayed({
-            if (!running || adapter?.isEnabled != true || !hasPermissions()) return@postDelayed
+    // ONE scan loop, ever: start() may be called several times (activity + service), so scheduling always replaces the pending tick.
+    private val scanTick = object : Runnable {
+        override fun run() {
+            if (!running || adapter?.isEnabled != true || !hasPermissions()) return
             try {
                 refreshAdvertising(); startScan()
-                h.postDelayed({ try { stopScan() } catch (_: Exception) {}; housekeeping() }, SCAN_WINDOW_MS)
+                h.removeCallbacks(stopScanTick); h.postDelayed(stopScanTick, SCAN_WINDOW_MS)
             } catch (e: SecurityException) { lastError = "Permission revoked" } catch (e: Exception) { lastError = "Scan error: ${e.javaClass.simpleName}" }
             val period = if (System.currentTimeMillis() < burstUntil) BURST_PERIOD_MS else SCAN_PERIOD_MS
             scheduleScan(period)
-        }, delay)
+        }
     }
+    private val stopScanTick = Runnable { try { stopScan() } catch (_: Exception) {}; housekeeping() }
+    private fun scheduleScan(delay: Long) { h.removeCallbacks(scanTick); h.postDelayed(scanTick, delay) }
     private fun startScan() {
         val sc = adapter?.bluetoothLeScanner ?: return
         if (scanning) return

@@ -69,7 +69,10 @@ class MainActivity : Activity(), NativeBridge.Host {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults); startRelay(); RelayRuntime.notifyChanged()
     }
     override fun requestEnableBluetooth() {
-        runOnUiThread { try { startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), 8) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } }
+        runOnUiThread {
+            if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) { requestPermissions(); return@runOnUiThread }
+            try { startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), 8) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+        }
     }
     @Deprecated("only used to refresh status after the system Bluetooth prompt") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode, resultCode, data); startRelay(); RelayRuntime.notifyChanged() }
     override fun openAppSettings() { runOnUiThread { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))) } }

@@ -8,6 +8,7 @@ import app.relay.store.SqliteStore
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** Process-wide holder of the engine and radio. Created lazily; the durable state lives in SQLite, so a killed process loses nothing. */
+@android.annotation.SuppressLint("StaticFieldLeak")   // holds only the application context
 object RelayRuntime {
     private var engine: RelayEngine? = null
     private var ble: BleTransport? = null

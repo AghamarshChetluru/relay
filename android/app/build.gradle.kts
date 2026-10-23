@@ -39,7 +39,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/relayAssets"))
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets { getByName("test").kotlin.srcDir("src/sharedTest/kotlin"); getByName("androidTest").kotlin.srcDir("src/sharedTest/kotlin") }
     packaging { resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*") }
@@ -48,23 +47,28 @@ android {
 // The UI is NOT forked: the approved mobile design is copied from ../../prototype at build time.
 // index.html -> web/app.html with two extra script tags (native flag + bridge). The browser prototype is untouched.
 val syncRelayAssets by tasks.registering(Copy::class) {
-    val out = layout.buildDirectory.dir("generated/relayAssets/web")
-    from("../../prototype") { include("style.css", "app.js", "mesh.js") }
-    from("../../prototype") {
-        include("index.html")
-        rename("index.html", "app.html")
-        filter { line ->
-            line.replace(
-                "<script src=\"mesh.js\"></script>",
-                "<script>window.RELAY_NATIVE=true;</script><script src=\"mesh.js\"></script><script src=\"native_bridge.js\"></script>"
-            )
+    into(layout.buildDirectory.dir("generated/relayAssets"))
+    into("web") {
+        from("../../prototype") { include("style.css", "app.js", "mesh.js") }
+        from("../../prototype") {
+            include("index.html")
+            rename("index.html", "app.html")
+            filter { line ->
+                line.replace(
+                    "<script src=\"mesh.js\"></script>",
+                    "<script>window.RELAY_NATIVE=true;</script><script src=\"mesh.js\"></script><script src=\"native_bridge.js\"></script>"
+                )
+            }
         }
+        from("src/native-web")
     }
-    from("src/native-web")
-    into(out)
 }
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(syncRelayAssets) }
-tasks.matching { it.name.startsWith("lint") }.configureEach { dependsOn(syncRelayAssets) }
+android.sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/relayAssets"))
+// Every task that reads the generated assets must run after the copy (asset merge, lint, packaging). tests/verify_apk.sh double-checks the result.
+tasks.configureEach {
+    val n = name
+    if ((n.startsWith("merge") && n.endsWith("Assets")) || n.contains("lint", ignoreCase = true) || n.startsWith("package")) dependsOn(syncRelayAssets)
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

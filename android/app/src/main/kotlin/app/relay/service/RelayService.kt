@@ -21,7 +21,7 @@ class RelayService : Service() {
         const val ACTION_STOP = "app.relay.STOP"; const val CHANNEL = "relay_radio"; const val NOTIF_ID = 41
         fun start(ctx: Context) {
             if (!BleTransport.requiredPermissions().all { ctx.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) return
-            val i = Intent(ctx, RelayService::class.java); if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            ctx.startForegroundService(Intent(ctx, RelayService::class.java))
         }
         fun stop(ctx: Context) { ctx.startService(Intent(ctx, RelayService::class.java).setAction(ACTION_STOP)) }
     }
@@ -35,7 +35,7 @@ class RelayService : Service() {
         }
         getSharedPreferences("relay", MODE_PRIVATE).edit().putBoolean("enabled", true).apply()
         val nm = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CHANNEL, "Relay radio", NotificationManager.IMPORTANCE_LOW).apply { description = "Shown while Relay looks for nearby phones" })
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Relay radio", NotificationManager.IMPORTANCE_LOW).apply { description = "Shown while Relay looks for nearby phones" })
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, RelayService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle("Relay is on")

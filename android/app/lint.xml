@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Dependency versions are pinned on purpose for reproducible builds; bump them deliberately. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <!-- Adaptive icons conventionally live in mipmap-anydpi-v26; kept for tooling compatibility. -->
+    <issue id="ObsoleteSdkInt" severity="ignore" />
+</lint>
