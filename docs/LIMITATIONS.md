@@ -9,6 +9,10 @@
 * BLE throughput is low (roughly 10-100 kB/s in practice). Text is instant; a 15 KB photo may take seconds to minutes per hop.
 * Background relaying is **not guaranteed**: Android Doze, battery savers and OEM task killers can pause or stop the foreground service. There is no automatic start after reboot; the user opens the app (messages themselves are persistent).
 * Android 11 and older tie BLE scanning to the location *permission* (Relay does not read location). Android 12+ uses nearby-device permissions with `neverForLocation`.
+* Two phones that both cannot advertise can never discover each other (each only scans). A phone whose advertising is refused at runtime switches to scan-only and always dials.
+* Android 6-11 delivers no scan results unless the system Location switch is on; the app reports this but cannot turn it on. Android 12+ does not need it.
+* Phones' clocks may disagree: advertised tags are opaque to peers and message expiry uses remaining lifetime, but the "smaller tag dials" rule can pick no dialler around hour boundaries, so a peer visible for 3 minutes without a session is dialled anyway (may produce an occasional duplicate session).
+* Android silently throttles scanning above 5 starts per 30 s; the app keeps its starts >= 8 s apart and backs off if the platform reports throttling. Behaviour on real phones is unmeasured.
 * Company ID 0xFFFF in advertisements is reserved for testing; a production build needs a registered ID or a different discovery scheme.
 * Only two simultaneous sessions; a peer is retried with exponential back-off up to 10 minutes. Dense crowds will take longer to exchange.
 

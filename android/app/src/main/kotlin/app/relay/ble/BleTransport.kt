@@ -6,6 +6,7 @@ import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.*
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.*
 import app.relay.core.*
 import java.util.UUID
@@ -24,8 +25,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         val OUTBOX: UUID = UUID.fromString("7e5a1c02-8f3b-4d6e-9a41-52c0de3a77b1")
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val COMPANY_ID = 0xFFFF            // reserved for testing/internal use; a production build must use a registered ID
-        const val SCAN_WINDOW_MS = 10_000L; const val SCAN_PERIOD_MS = 60_000L; const val BURST_PERIOD_MS = 20_000L
-        const val MAX_SESSIONS = 2; const val COOLDOWN_MS = 60_000L; const val MAX_BACKOFF_MS = 10 * 60_000L
+        const val MAX_SESSIONS = 2
         const val IDLE_TIMEOUT_MS = 20_000L; const val SESSION_TIMEOUT_MS = 120_000L; const val CONNECT_TIMEOUT_MS = 15_000L
         const val RECENT_PEER_MS = 2 * 60_000L; const val DESIRED_MTU = 247
 
@@ -42,15 +42,25 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     @Volatile private var running = false
     private var server: BluetoothGattServer? = null
     private var advertising = false; private var scanning = false; private var lastError = ""
-    private var lastContactMs = 0L; private var adCallback: AdvertiseCallback? = null; private var lastAdDigest = -1
+    private var lastContactMs = 0L; private var adCallback: AdvertiseCallback? = null
+    private val adState = AdvertisingState(engine.identity.deviceId)
+    private val planner = ScanPlanner()
+    private var advertisingBroken = false          // the platform refused to advertise on this phone: behave as scan-only so the role rule makes us dial
     private val links = ConcurrentHashMap<String, Link>()             // key: device address
     private val seenTags = ConcurrentHashMap<String, Long>()          // tag hex -> last seen ms
-    private class Memory(var lastAttempt: Long = 0, var fails: Int = 0, var theirDigest: Int = -1, var myDigest: Int = -1, var lastSession: Long = 0)
+    private class Memory(var lastAttempt: Long = 0, var fails: Int = 0, var theirDigest: Int = -1, var myDigest: Int = -1, var lastSession: Long = 0, val firstSeen: Long = System.currentTimeMillis(), var lastSeen: Long = 0)
     private val memory = ConcurrentHashMap<String, Memory>()
 
     fun hasPermissions(): Boolean = requiredPermissions().all { ctx.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     private fun bleSupported() = ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE) && adapter != null
-    private fun canAdvertise() = adapter?.isMultipleAdvertisementSupported == true && adapter?.bluetoothLeAdvertiser != null
+    private fun canAdvertise() = adapter?.bluetoothLeAdvertiser != null          // null when the chipset/driver cannot advertise
+    private fun advertisingWorks() = canAdvertise() && !advertisingBroken
+    /** Android 6-11 delivers NO scan results (silently) unless the system Location switch is on, even with the permission granted. Android 12+ does not need it. */
+    private fun scanNeedsLocationSwitch() = Build.VERSION.SDK_INT < 31
+    private fun locationSwitchOn(): Boolean {
+        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return true
+        return try { if (Build.VERSION.SDK_INT >= 28) lm.isLocationEnabled else (lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) } catch (_: Exception) { true }
+    }
 
     fun status(): RadioStatus {
         val now = System.currentTimeMillis()
@@ -72,7 +82,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     /** Idempotent. Returns false (with [status] explaining why) if the radio cannot run right now; storage and UI keep working regardless. */
     fun start(): Boolean {
         if (!receiverRegistered) { ctx.registerReceiver(stateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)); receiverRegistered = true }
-        running = true; engine.canAdvertise = canAdvertise()
+        running = true; engine.canAdvertise = advertisingWorks()
         h.post { startRadio(); onStatus() }
         return hasPermissions() && adapter?.isEnabled == true
     }
@@ -84,10 +94,10 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         if (!bleSupported()) { lastError = "This phone has no Bluetooth LE"; return }
         if (!hasPermissions()) { lastError = "Bluetooth permission not granted"; return }
         if (adapter?.isEnabled != true) { lastError = "Bluetooth is off"; return }
-        lastError = ""; engine.canAdvertise = canAdvertise()
+        lastError = ""; engine.canAdvertise = advertisingWorks()
         try {
             if (server == null) openServer()
-            scheduleScan(0)
+            scheduleScan(planner.allowedIn(System.currentTimeMillis()))
         } catch (e: SecurityException) { lastError = "Permission revoked" } catch (e: Exception) { lastError = "Radio start failed: ${e.javaClass.simpleName}" }
     }
 
@@ -95,79 +105,101 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         h.removeCallbacksAndMessages(null)
         try { stopScan() } catch (_: Exception) {}
         try { stopAdvertising() } catch (_: Exception) {}
+        adState.stopped()
         links.values.toList().forEach { it.teardown("radio stopped") }
         try { server?.close() } catch (_: Exception) {}; server = null
         if (reason.isNotEmpty() && !running) lastError = ""
     }
 
     // ------------------------------------------------------------------ identity tag (rotating: no stable identifier on air)
-    private fun myTag(): ByteArray = tagFor(engine.identity.deviceId)
-    private fun tagFor(deviceId: String): ByteArray = sha256(deviceId.unhex(), Writer().u64(System.currentTimeMillis() / 3_600_000L).toByteArray()).copyOf(4)
-    private fun cmp(a: ByteArray, b: ByteArray): Int { for (i in a.indices) { val d = (a[i].toInt() and 0xff) - (b[i].toInt() and 0xff); if (d != 0) return d }; return 0 }
 
     // ------------------------------------------------------------------ advertising
     private fun refreshAdvertising() {
         if (!running || !canAdvertise() || adapter?.isEnabled != true) return
-        val dg = engine.inventoryDigest()
-        if (advertising && dg == lastAdDigest) return
+        val payload = adState.refresh(System.currentTimeMillis(), engine.inventoryDigest()) ?: return    // nothing changed: tag (hourly) and digest both current
         try { stopAdvertising() } catch (_: Exception) {}
-        val adv = adapter!!.bluetoothLeAdvertiser ?: return
+        val adv = adapter!!.bluetoothLeAdvertiser ?: run { adState.failed(); return }
         val settings = AdvertiseSettings.Builder().setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER).setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM).setConnectable(true).setTimeout(0).build()
         val data = AdvertiseData.Builder().setIncludeDeviceName(false).setIncludeTxPowerLevel(false).addServiceUuid(ParcelUuid(SERVICE)).build()
-        val tag = myTag() + byteArrayOf((dg ushr 8).toByte(), dg.toByte())
-        val scanResp = AdvertiseData.Builder().setIncludeDeviceName(false).addManufacturerData(COMPANY_ID, tag).build()
+        // The service UUID is repeated in the scan response (18+10 bytes <= 31): some stacks report the advert and the scan response as separate results,
+        // and the scan filter must match the one that carries the tag.
+        val scanResp = AdvertiseData.Builder().setIncludeDeviceName(false).addServiceUuid(ParcelUuid(SERVICE)).addManufacturerData(COMPANY_ID, payload).build()
         val cb = object : AdvertiseCallback() {
-            override fun onStartSuccess(s: AdvertiseSettings) { advertising = true; lastAdDigest = dg; onStatus() }
-            override fun onStartFailure(errorCode: Int) { advertising = false; lastError = "Advertising failed ($errorCode)"; onStatus() }
+            override fun onStartSuccess(s: AdvertiseSettings) { h.post { if (adCallback === this) { advertising = true; onStatus() } } }
+            override fun onStartFailure(errorCode: Int) { h.post {
+                if (adCallback !== this) return@post                  // a stale callback from an advertisement we already replaced
+                advertising = false; adState.failed(); lastError = "Advertising failed ($errorCode)"
+                // FEATURE_UNSUPPORTED / DATA_TOO_LARGE will not get better: act as scan-only. TOO_MANY_ADVERTISERS / INTERNAL_ERROR are retried on the next tick.
+                if (errorCode == ADVERTISE_FAILED_FEATURE_UNSUPPORTED || errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE) { advertisingBroken = true; engine.canAdvertise = false }
+                onStatus() } }
         }
-        adCallback = cb; adv.startAdvertising(settings, data, scanResp, cb)
+        adCallback = cb
+        try { adv.startAdvertising(settings, data, scanResp, cb) } catch (e: Exception) { adCallback = null; adState.failed(); lastError = "Advertising error: ${e.javaClass.simpleName}" }
     }
-    private fun stopAdvertising() { adCallback?.let { adapter?.bluetoothLeAdvertiser?.stopAdvertising(it) }; adCallback = null; advertising = false }
+    private fun stopAdvertising() { val cb = adCallback; adCallback = null; advertising = false; cb?.let { adapter?.bluetoothLeAdvertiser?.stopAdvertising(it) } }
 
     // ------------------------------------------------------------------ scanning (duty cycled)
     private val scanCb = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, r: ScanResult) { val dev = r.device; val rec = r.scanRecord; h.post { onSighting(dev, rec) } }
-        override fun onScanFailed(errorCode: Int) { scanning = false; lastError = "Scan failed ($errorCode)"; onStatus() }
+        override fun onScanFailed(errorCode: Int) { h.post {
+            if (errorCode == SCAN_FAILED_ALREADY_STARTED) return@post          // a scan is running: our flag was wrong, not the radio
+            scanning = false; lastError = "Scan failed ($errorCode)"
+            if (errorCode == 6) planner.coolOff(System.currentTimeMillis(), 30_000)   // SCAN_FAILED_SCANNING_TOO_FREQUENTLY (hidden constant)
+            onStatus() } }
     }
-    private var burstUntil = 0L
     // ONE scan loop, ever: start() may be called several times (activity + service), so scheduling always replaces the pending tick.
     private val scanTick = object : Runnable {
         override fun run() {
             if (!running || adapter?.isEnabled != true || !hasPermissions()) return
+            val now = System.currentTimeMillis()
             try {
-                refreshAdvertising(); startScan()
-                h.removeCallbacks(stopScanTick); h.postDelayed(stopScanTick, SCAN_WINDOW_MS)
+                refreshAdvertising()
+                if (scanNeedsLocationSwitch() && !locationSwitchOn()) { lastError = "Turn on Location in system settings: Android 6-11 needs it to find nearby Bluetooth devices"; onStatus() }
+                else {
+                    val wait = planner.allowedIn(now)
+                    if (wait > 0) { scheduleScan(wait); return }                // too soon after the previous start (Android throttles scan starts)
+                    if (lastError.startsWith("Turn on Location")) lastError = ""
+                    startScan(planner.intensity(now))
+                    h.removeCallbacks(stopScanTick); h.postDelayed(stopScanTick, planner.windowMs)
+                }
             } catch (e: SecurityException) { lastError = "Permission revoked" } catch (e: Exception) { lastError = "Scan error: ${e.javaClass.simpleName}" }
-            val period = if (System.currentTimeMillis() < burstUntil) BURST_PERIOD_MS else SCAN_PERIOD_MS
-            scheduleScan(period)
+            scheduleScan(planner.periodAfterStart(now))
         }
     }
     private val stopScanTick = Runnable { try { stopScan() } catch (_: Exception) {}; housekeeping() }
     private fun scheduleScan(delay: Long) { h.removeCallbacks(scanTick); h.postDelayed(scanTick, delay) }
-    private fun startScan() {
+    private fun startScan(i: ScanPlanner.Intensity) {
         val sc = adapter?.bluetoothLeScanner ?: return
         if (scanning) return
         val filters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build())
-        sc.startScan(filters, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build(), scanCb); scanning = true; onStatus()
+        // LOW_POWER samples ~0.5 s of every 5 s, so a 10 s window can see a peer once or not at all: burst windows use LOW_LATENCY instead.
+        val mode = if (i == ScanPlanner.Intensity.HIGH) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER
+        sc.startScan(filters, ScanSettings.Builder().setScanMode(mode).build(), scanCb); scanning = true; planner.onScanStarted(System.currentTimeMillis(), i); onStatus()
     }
     private fun stopScan() { if (scanning) { adapter?.bluetoothLeScanner?.stopScan(scanCb); scanning = false; onStatus() } }
-    /** Call when new local data exists (a post, a reply): shortens the scan period for a few minutes so it leaves sooner. */
-    fun nudge() { burstUntil = System.currentTimeMillis() + 3 * 60_000L; h.post { if (running) { refreshAdvertising() } } }
+    /** Call when new local data exists (a post, a reply). Callable from any thread. Opens a burst: advertise the new digest now and scan promptly and intensively. */
+    fun nudge() { h.post {
+        if (!running) return@post
+        val plan = planner.onNudge(System.currentTimeMillis(), scanning)
+        refreshAdvertising()
+        if (plan.restartActiveScan) { try { stopScan() } catch (_: Exception) {} }       // a slow LOW_POWER window is running: replace it with a fast one
+        scheduleScan(plan.delayMs)
+    } }
 
     private fun onSighting(dev: BluetoothDevice, rec: ScanRecord?) {
         val md = rec?.getManufacturerSpecificData(COMPANY_ID) ?: return
         if (md.size != 6) return
         val tag = md.copyOf(4); val digest = ((md[4].toInt() and 0xff) shl 8) or (md[5].toInt() and 0xff); val key = tag.hex()
-        seenTags[key] = System.currentTimeMillis(); onStatus()
+        val now = System.currentTimeMillis(); seenTags[key] = now; onStatus()
         if (!running || links.values.any { it.tagKey == key } || links.size >= MAX_SESSIONS) return
-        val mem = memory.getOrPut(key) { Memory() }; val now = System.currentTimeMillis()
-        val backoff = minOf(MAX_BACKOFF_MS, COOLDOWN_MS shl minOf(mem.fails, 4))
-        if (now - mem.lastAttempt < backoff) return
-        // role rule: scan-only phones always initiate; otherwise the smaller tag initiates (avoids two simultaneous connections)
-        val iInitiate = !canAdvertise() || cmp(myTag(), tag) < 0
-        if (!iInitiate) return
+        val mem = memory.getOrPut(key) { Memory() }; mem.lastSeen = now
         val myDigest = engine.inventoryDigest()
-        if (digest == mem.theirDigest && myDigest == mem.myDigest && now - mem.lastSession < 10 * 60_000L) return    // nothing changed on either side
+        // After a clean session the cooldown is short if WE have something new (an urgent post must not wait a minute behind the last sync).
+        val backoff = PeerPolicy.backoffMs(mem.fails, mem.lastSession > 0 && myDigest != mem.myDigest)
+        if (now - mem.lastAttempt < backoff) return
+        val unserved = now - maxOf(mem.firstSeen, mem.lastSession)
+        if (!PeerPolicy.shouldInitiate(advertisingWorks(), adState.tagForRoleRule(now), tag, unserved)) return
+        if (PeerPolicy.nothingNew(digest, mem.theirDigest, myDigest, mem.myDigest, now - mem.lastSession)) return
         mem.lastAttempt = now; connect(dev, key, digest)
     }
 
@@ -178,7 +210,11 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         onStatus()
     }
 
-    private fun housekeeping() { val now = System.currentTimeMillis(); seenTags.entries.removeIf { now - it.value > 30 * 60_000L }; engine.housekeeping(); onStatus() }
+    private fun housekeeping() {
+        val now = System.currentTimeMillis(); seenTags.entries.removeIf { now - it.value > 30 * 60_000L }
+        memory.entries.removeIf { now - maxOf(it.value.lastSeen, it.value.lastSession, it.value.lastAttempt, it.value.firstSeen) > 60 * 60_000L }   // tags rotate hourly; old ones never return
+        engine.housekeeping(); onStatus()
+    }
 
     // ------------------------------------------------------------------ GATT server
     private fun openServer() {
