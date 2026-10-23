@@ -32,8 +32,8 @@ Peers that cannot advertise (no LE peripheral support) still work as **scan-only
 ## Radio roles and discovery
 
 * Every phone runs a **GATT server** (service UUID `7e5a1c00-…`, characteristics `INBOX` write, `OUTBOX` notify) and, if supported, **advertises** the service UUID plus a 6-byte scan-response tag (4 B device tag + 2 B inventory digest).
-* Every phone **scans** for the service UUID in duty cycles (default: 10 s scan every 60 s, low-power mode; 30 s/20 s burst for the first minute after the app opens or the inventory changes).
-* **Role rule** (avoids two simultaneous connections): the phone with the lexicographically smaller device ID initiates; if only one side can advertise, the scan-only side initiates. A per-peer cooldown (default 60 s) and a global cap (2 concurrent sessions) bound battery and radio use. If the peer's inventory digest has not changed since the last session, no connection is made.
+* Every phone **scans** for the service UUID in duty cycles (default: 10 s scan every 30 s, low-power mode; a 10 s window every 12 s in low-latency mode for 3 minutes after the inventory changes; always >= 8 s between scan starts to stay under Android's 5-starts-per-30-s throttle).
+* **Role rule** (avoids two simultaneous connections): the phone with the lexicographically smaller device ID initiates; if only one side can advertise, the scan-only side initiates. A per-peer cooldown (default 30 s, 5 s when we have something new; failures back off 15 s doubling to 10 min) and a global cap (2 concurrent sessions) bound battery and radio use. If the peer's inventory digest has not changed since the last session, no connection is made.
 * After connect: request MTU 247, enable notifications, then run the link protocol below.
 
 ## Link protocol (versioned, transport-independent)

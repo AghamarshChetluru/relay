@@ -124,7 +124,7 @@ Open **ⓘ → About Relay → Field Test Diagnostics (for testers)**. It lists 
 | 1 | Bluetooth | Turn Bluetooth on |
 | 2 | Permissions | Tap Allow Bluetooth access; Android 8–11: allow Location, and turn the Location switch on |
 | 3 | Relay running | Tap Start Relay / the chip; check the "Relay is on" notification |
-| 4 | Scanning now | Short windows every 20–60 s; "No (between windows)" is normal |
+| 4 | Scanning now | Short windows every 12–30 s; "No (between windows)" is normal |
 | 5 | Advertising (findable) | "Not supported" = this phone can't be found by others |
 | 6 | Relay phones found | 0 means discovery isn't working (distance, Location switch on Android 8–11, one phone can't advertise, or Bluetooth stack issue) |
 | 7 | Connections made | Found but 0 connections: look at the events list for "connecting…" then "link closed before any exchange" (Bluetooth connect error such as status 133) |

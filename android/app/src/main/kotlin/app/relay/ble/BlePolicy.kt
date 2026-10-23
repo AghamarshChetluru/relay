@@ -37,7 +37,7 @@ class AdvertisingState(private val deviceId: String) {
 
 /** Scan duty cycle. A local change (new request/reply) opens a burst: high-intensity windows, short period, and an immediate first window. */
 class ScanPlanner(
-    val windowMs: Long = 10_000, val periodMs: Long = 60_000, val burstPeriodMs: Long = 20_000, val burstMs: Long = 3 * 60_000,
+    val windowMs: Long = 10_000, val periodMs: Long = 30_000, val burstPeriodMs: Long = 12_000, val burstMs: Long = 3 * 60_000,
     /** Android silently stops delivering results after >5 scan starts per 30 s; staying >=8 s apart keeps us at <=4. */
     val minRestartMs: Long = 8_000,
 ) {
@@ -67,8 +67,8 @@ class ScanPlanner(
 
 /** When to dial a peer we just saw, and who dials. */
 object PeerPolicy {
-    const val COOLDOWN_MS = 60_000L             // after a successful session with nothing new locally
-    const val URGENT_COOLDOWN_MS = 10_000L      // after a success, but our inventory has changed since (new request/reply)
+    const val COOLDOWN_MS = 30_000L             // after a successful session with nothing new locally
+    const val URGENT_COOLDOWN_MS = 5_000L       // after a success, but our inventory has changed since (new request/reply)
     const val FAIL_BASE_MS = 15_000L; const val MAX_BACKOFF_MS = 10 * 60_000L
     const val FALLBACK_INITIATE_MS = 3 * 60_000L
     const val QUIET_MS = 10 * 60_000L

@@ -63,13 +63,13 @@ class BlePolicyTest {
     }
 
     // ---------------------------------------------------------------- 2. prompt discovery for an urgent request
-    private val W = 10_000L; private val P = 60_000L; private val B = 20_000L
+    private val W = 10_000L; private val P = 30_000L; private val B = 12_000L
 
     @Test fun idleNudgeStartsAHighIntensityScanImmediately() {
         val p = ScanPlanner(); p.onScanStarted(0, Intensity.LOW)                     // an ordinary window ran long ago and ended
         val now = 45_000L; assertFalse(p.inBurst(now))
         val plan = p.onNudge(now, scanActive = false)
-        assertEquals("must not wait for the next 60 s tick (15 s away)", 0L, plan.delayMs); assertFalse(plan.restartActiveScan)
+        assertEquals("must not wait for the next 30 s tick (15 s away)", 0L, plan.delayMs); assertFalse(plan.restartActiveScan)
         assertEquals(Intensity.HIGH, p.intensity(now)); assertEquals(B, p.periodAfterStart(now))
     }
 
@@ -117,8 +117,8 @@ class BlePolicyTest {
 
     @Test fun anUrgentPostIsScannedForWithinSecondsNotAMinute() {
         val p = ScanPlanner(); p.onScanStarted(0, Intensity.LOW)
-        val now = 12_000L                                                          // window over; ordinary next start would be at 60_000
-        val plan = p.onNudge(now, false); assertTrue(plan.delayMs <= 0L + p.minRestartMs); assertTrue(now + plan.delayMs < 60_000)
+        val now = 12_000L                                                          // window over; ordinary next start would be at 30_000
+        val plan = p.onNudge(now, false); assertTrue(plan.delayMs <= 0L + p.minRestartMs); assertTrue(now + plan.delayMs < 30_000)
     }
 
     @Test fun platformThrottlingMakesUsBackOff() { val p = ScanPlanner(); p.onScanStarted(0, Intensity.LOW); p.coolOff(1_000, 30_000); assertEquals(30_000L, p.allowedIn(1_000)); assertEquals(0L, p.allowedIn(31_000)) }

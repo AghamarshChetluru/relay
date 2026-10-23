@@ -121,7 +121,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         val payload = adState.refresh(System.currentTimeMillis(), engine.inventoryDigest()) ?: return    // nothing changed: tag (hourly) and digest both current
         try { stopAdvertising() } catch (_: Exception) {}
         val adv = adapter!!.bluetoothLeAdvertiser ?: run { adState.failed(); return }
-        val settings = AdvertiseSettings.Builder().setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER).setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM).setConnectable(true).setTimeout(0).build()
+        val settings = AdvertiseSettings.Builder().setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED).setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM).setConnectable(true).setTimeout(0).build()
         val data = AdvertiseData.Builder().setIncludeDeviceName(false).setIncludeTxPowerLevel(false).addServiceUuid(ParcelUuid(SERVICE)).build()
         // The service UUID is repeated in the scan response (18+10 bytes <= 31): some stacks report the advert and the scan response as separate results,
         // and the scan filter must match the one that carries the tag.
