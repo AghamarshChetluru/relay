@@ -22,6 +22,7 @@ import app.relay.share.ApkShare
 /** Hosts the existing mobile UI (bundled assets, served from a local https origin; no network, no file access). */
 class MainActivity : Activity(), NativeBridge.Host {
     private lateinit var web: WebView
+    internal val webViewForTest: WebView get() = web
     private val main = Handler(Looper.getMainLooper())
     private var pendingPush = false
     private val listener: () -> Unit = {

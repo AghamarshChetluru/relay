@@ -539,7 +539,7 @@
     el.appendChild(h('h3', { style: 'font-size:19px' }, i.title));
     if (i.desc) el.appendChild(h('p', {}, i.desc));
     var photo = i.hasPhoto ? M.photoOf(v, rid) : null;
-    if (photo && photo.ready) el.appendChild(h('figure', { class: 'bigphoto' }, h('img', { src: photo.dataUrl, alt: 'Photo shared with this request' }), h('figcaption', { class: 'muted small' }, 'Photo from the requester · ' + kb(photo.bytes) + ' · not verified')));
+    if (photo && photo.ready) el.appendChild(h('figure', { class: 'bigphoto' }, h('img', { src: photo.dataUrl, alt: 'Photo shared with this request' }), h('figcaption', { class: 'muted small' }, 'Photo from the requester · ' + kb(photo.bytes) + ' · not verified' + (NATIVE ? ' · photo ID ' + String(photo.id).slice(0, 8) : ''))));
     else if (photo) el.appendChild(h('div', { class: 'note' }, 'A photo was attached. It travels after the text and has not reached this phone yet.'));
     var det = h('div', { class: 'details' });
     if (i.kind === 'missing') {
