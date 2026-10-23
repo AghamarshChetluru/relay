@@ -10,7 +10,7 @@ Offline-first community help and missing-person coordination for when cellular n
 
 | Path | What it is |
 |---|---|
-| `prototype/` | Standalone offline browser files: `index.html` (mobile app), `simulator.html` (desktop simulator), `mesh.js` (engine), `app.js`, `sim.js`, `sim_explain.js`, `style.css`, `sim.css` |
+| `prototype/` | Standalone offline browser files: `index.html` (mobile app), `simulator.html` (desktop simulator), `mesh.js` (engine), `app.js`, `sim.js`, `sim_explain.js`, `story.js`, `style.css`, `sim.css`, `story.css` |
 | `tests/` | Engine, browser (headless Chrome) and routing tests, plus the independent audit scripts in `tests/independent_audit/` |
 | `docs/` | Demo instructions, the independent audit, the Android handoff, screenshots, QA history, baseline checksums |
 | `android/` | Android project (feature branch) |
@@ -18,7 +18,7 @@ Offline-first community help and missing-person coordination for when cellular n
 ## Run the browser prototype (no server, no internet)
 
 Open `prototype/index.html` (mobile app; best at ~390 px wide) and `prototype/simulator.html` (laptop) directly in Chrome. See `docs/DEMO_INSTRUCTIONS.txt`.
-The desktop simulator (v3) is an explanation-first walkthrough; how it works and why it is truthful to the engine: `docs/SIMULATOR_V3_DESIGN.md` (screenshots in `docs/screenshots/sim-v3/`).
+The desktop simulator opens in **Story** mode (follow one message through the network); **Explore** keeps the technical tools (`simulator.html?mode=explore`). Design and truthfulness notes: `docs/SIMULATOR_V4_DESIGN.md` (screenshots in `docs/screenshots/sim-v4/`); the previous explanation-first design is in `docs/SIMULATOR_V3_DESIGN.md`.
 
 ## Run the tests
 

@@ -1,7 +1,7 @@
 <!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
 /* Simulator v3 checks: explanation, truthfulness of what is drawn, controls, accessibility, offline. usage: sim_v3_test.html?w=1440&h=900&src=/abs/simulator.html */
 var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src');
-var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC+'?mode=explore';document.body.appendChild(fr);
+var fr=document.createElement('iframe');fr.style.cssText='width:'+W+'px;height:'+HH+'px;border:0';fr.src='file://'+SRC+'?mode=explore&responder=clinic';document.body.appendChild(fr);
 var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 fr.onload=function(){setTimeout(function(){run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'})},300)};
 async function run(){
@@ -43,7 +43,7 @@ ok(QA('#net line.e.next').length===0&&QA('#net .ring.gap').length===1,'stalled: 
 ok(T('#r-held')===String(g.holders.length)&&T('#r-cut')===String(g.cutOff.length)&&T('#r-reach')==='0'&&T('#r-norelay')===String(g.noRelay.length),'received / could still receive / cut off / no Relay all equal engine groups');
 ok(QA('#net circle.n.cut').length===g.cutOff.length&&QA('#net circle.n.has').length===g.holders.length,'cut-off phones drawn differently from holders');
 ok(S().order.every(function(i){return !M.nodeHas(i,pid)||M.canRelay(i)})&&!M.nodeHas(K().E,pid),'bridge really blocks: no phone beyond the gap holds it');
-ok(/Possible responder/.test(T('#net'))&&/Unreachable now/.test(T('#m-dest')),'volunteer is a "possible responder", not the addressee');
+ok(/Responder · /.test(T('#net'))&&/Unreachable now/.test(T('#m-dest')),'a request names a responder, not an addressee');
 /* ===== change: connected / reachable / received are three different numbers ===== */
 var heldBefore=M.holders(pid).length,groupsBefore=M.coverage().groups;
 click('#btn-do');ok(/would link/.test(T('#inst-effect')),'Q6 install dialog says what installing would connect');click('#inst-send');click('#inst-accept');

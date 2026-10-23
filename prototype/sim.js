@@ -30,43 +30,64 @@
   function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 
   /* ---------- scenarios: every action is a real engine call ---------- */
+  var FIXED = /[?&]responder=clinic/.test(location.search);   // regression mode: the original scripted "clinic volunteer" / "Vasant Vihar volunteer" (used by the older Explore test suites)
+  function hash(t) { var x = 2166136261; for (var i = 0; i < t.length; i++) { x ^= t.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
+  function farSide() {   // Relay phones in the same group as the far-side key phone: the group the requester's side cannot reach until the gap is bridged
+    var s = S(), on = {}; s.order.forEach(function (i) { on[i] = M.canRelay(i); }); var comp = M.components(on), want = comp[K().E];
+    return s.order.filter(function (i) { return on[i] && comp[i] === want; }).sort();
+  }
+  function pickBy(salt, ids) { return ids.reduce(function (b, i) { return hash(salt + i) < hash(salt + b) ? i : b; }, ids[0]); }
+  function poster() { if (FIXED) return K().L; var c = st.ctx; if (!c.poster) c.poster = pickBy('poster:' + st.scen, farSide()); return c.poster; }
+  /* The responder is whoever really receives the request on the other side: once at least six far-side phones hold it (or it can no longer move) the engine state picks one of them. */
+  function respNow() {
+    var c = st.ctx; if (FIXED) return K().E; if (c.responder) return c.responder;
+    var pid = mainPid(), ins = c.install; if (!pid || !ins) return null;
+    var D = ins.id, o = S().requests[c.rid] ? S().requests[c.rid].authorNodeId : null, can = M.stats(pid).canMove;
+    var cand = M.holders(pid).filter(function (i) { return i !== D && i !== o && M.canRelay(i) && ins.newSet.indexOf(i) >= 0; }).sort();
+    if (!cand.length && !can) cand = M.holders(pid).filter(function (i) { return M.canRelay(i) && ins.newSet.indexOf(i) >= 0 && i !== o; }).sort();
+    if (!cand.length || (cand.length < 6 && can)) return null;
+    c.responder = pickBy('responder:' + st.scen, cand); return c.responder;
+  }
+  function replyFor(id) { var q = REQ[st.scen].reply; return FIXED ? q : { kind: q.kind, note: q.note2, area: S().nodes[id].area + (q.kind === 'sighting' ? ', 10am' : '') }; }
+  function updateFor(id, which) { var q = REQ.broadcast[which]; return FIXED ? q : { text: q.text, category: q.category, area: S().nodes[id].area }; }
+  function urgentFor(id) { var q = REQ.broadcast.urgent; return FIXED ? q : { kind: q.kind, category: q.category, title: q.title, description: q.description, area: S().nodes[id].area, urgent: q.urgent }; }
   var REQ = {
     emergency: { request: { kind: 'urgent', category: 'Medical', title: 'Medical help needed near Hauz Khas Village', description: 'My mother needs medical assistance. She is having trouble breathing.', area: 'Hauz Khas Village', urgent: true },
-      reply: { kind: 'offer', note: 'I can walk your mother to the clinic gate. I am a nurse (self-reported).', area: 'Clinic gate' } },
+      reply: { kind: 'offer', note: 'I can walk your mother to the clinic gate. I am a nurse (self-reported).', area: 'Clinic gate', note2: 'I’m close by and can help. I’m a nurse (self-reported).' } },
     missing: { request: { kind: 'missing', category: 'Missing', title: 'Looking for Meera, 8, red school bag', description: 'Last seen near the bus stop in a blue uniform.', area: 'Lodhi Road bus stop', urgent: false, targets: ['LC'], lastKnown: 'Lodhi Colony' },
-      reply: { kind: 'sighting', note: 'Saw a girl with a red bag near the clinic gate around 10am.', area: 'Clinic gate, 10am' } },
+      reply: { kind: 'sighting', note: 'Saw a girl with a red bag near the clinic gate around 10am.', area: 'Clinic gate, 10am', note2: 'Saw a girl with a red bag near the bus stop around 10am.' } },
     broadcast: { update: { text: 'Water collection point open at City Hall, north entrance.', category: 'Resources', area: 'Vasant Vihar' },
       update2: { text: 'Second update: queue is moving slowly at the north entrance.', category: 'Community', area: 'Vasant Vihar' },
       urgent: { kind: 'urgent', category: 'Medical', title: 'Medical help needed near the market', description: 'Someone has collapsed outside the market.', area: 'Vasant Vihar', urgent: true } }
   };
   var SCEN = {
     emergency: { label: '1 · Emergency assistance', dest: true,
-      situation: function () { return { head: 'Mobile networks are down.', body: [h('b', {}, 'A person in Hauz Khas needs a doctor.'), ' They cannot call anyone. ' + M.participating().length + ' of the 80 phones in this simulated area run Relay, which passes short messages directly between nearby phones. A clinic volunteer in Lodhi Colony is one phone that could respond. The request is not addressed to anyone: it spreads to every Relay phone it can reach.'] }; },
+      situation: function () { return { head: 'Mobile networks are down.', body: [h('b', {}, 'A person in Hauz Khas needs a doctor.'), ' They cannot call anyone. ' + M.participating().length + ' of the 80 phones in this simulated area run Relay, which passes short messages directly between nearby phones. Any Relay phone that receives it could respond. The request is not addressed to anyone: it spreads to every Relay phone it can reach.'] }; },
       steps: [
       { t: 'A survivor posts a medical request', a: 'Post request', run: function () { var r = M.createRequest(K().A, REQ.emergency.request); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
       { t: 'It spreads phone to phone, then stalls at a gap', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
-      { t: 'It crosses and reaches the volunteer', a: 'Play', run: function () { play(function () { return M.nodeHas(K().E, mainPid()); }); }, done: function () { return !!mainPid() && M.nodeHas(K().E, mainPid()); } },
-      { t: 'The volunteer sends an offer of help', a: 'Send offer', run: function () { var x = M.createReply(K().E, st.ctx.rid, REQ.emergency.reply); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
+      { t: 'It crosses and reaches someone who can respond', a: 'Play', run: function () { play(function () { var r = respNow(); return !!r && M.nodeHas(r, mainPid()); }); }, done: function () { var r = respNow(); return !!mainPid() && !!r && M.nodeHas(r, mainPid()); } },
+      { t: 'A responder sends an offer of help', a: 'Send offer', run: function () { var r = respNow(), x = r ? M.createReply(r, st.ctx.rid, replyFor(r)) : { ok: false }; if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
       { t: 'The offer travels back to the requester', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.replyPid); }); }, done: function () { return !!st.ctx.replyPid && M.nodeHas(K().A, st.ctx.replyPid); } },
-      { t: 'The requester acknowledges the offer', a: 'Acknowledge and send', run: function () { var x = M.createAck(K().A, st.ctx.replyPid); if (x.ok) { st.ctx.ackPid = x.packetId; select(x.packetId); play(function () { return M.nodeHas(K().E, x.packetId); }); } }, done: function () { return !!st.ctx.ackPid && M.nodeHas(K().E, st.ctx.ackPid); } }] },
+      { t: 'The requester acknowledges the offer', a: 'Acknowledge and send', run: function () { var x = M.createAck(K().A, st.ctx.replyPid); if (x.ok) { st.ctx.ackPid = x.packetId; select(x.packetId); play(function () { return M.nodeHas(respNow(), x.packetId); }); } }, done: function () { return !!st.ctx.ackPid && M.nodeHas(respNow(), st.ctx.ackPid); } }] },
     missing: { label: '2 · Missing person', dest: true,
       situation: function () { return { head: 'A child is missing and nobody can phone around.', body: [h('b', {}, 'A parent in Hauz Khas is looking for a child last seen near Lodhi Colony.'), ' The request carries a target area, not coordinates. Each phone declares a neighbourhood by choice (no GPS). Relay prefers to pass the request to phones whose declared area is closer to the target in a small offline neighbourhood graph, with a limited number of detours.'] }; },
       steps: [
       { t: 'A survivor shares a missing-person request', a: 'Post request', run: function () { var r = M.createRequest(K().A, REQ.missing.request); st.ctx.rid = r.requestId; select(r.packetId); }, done: function () { return !!st.ctx.rid; } },
       { t: 'It spreads through participating phones and stalls', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
-      { t: 'It reaches a phone near the clinic', a: 'Play', run: function () { play(function () { return M.nodeHas(K().E, mainPid()); }); }, done: function () { return !!mainPid() && M.nodeHas(K().E, mainPid()); } },
-      { t: 'Someone submits a possible sighting', a: 'Send sighting', run: function () { var x = M.createReply(K().E, st.ctx.rid, REQ.missing.reply); if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
+      { t: 'It reaches a phone on the other side', a: 'Play', run: function () { play(function () { var r = respNow(); return !!r && M.nodeHas(r, mainPid()); }); }, done: function () { var r = respNow(); return !!mainPid() && !!r && M.nodeHas(r, mainPid()); } },
+      { t: 'Someone submits a possible sighting', a: 'Send sighting', run: function () { var r = respNow(), x = r ? M.createReply(r, st.ctx.rid, replyFor(r)) : { ok: false }; if (x.ok) { st.ctx.replyPid = x.packetId; select(x.packetId); } }, done: function () { return !!st.ctx.replyPid; } },
       { t: 'The sighting returns. It stays unverified.', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.replyPid); }); }, done: function () { return !!st.ctx.replyPid && M.nodeHas(K().A, st.ctx.replyPid); } }] },
     broadcast: { label: '3 · Community broadcast', dest: false, phaseText: { outcome: 'An urgent request and community updates now compete for the same links.' },
       situation: function () { return { head: 'Useful information, but not an emergency.', body: [h('b', {}, 'A neighbour in Vasant Vihar posts that a water point is open.'), ' Community updates are the lowest priority: when a phone-to-phone link is busy, urgent requests go first. Later you will see an urgent request and an update compete for the same links.'] }; },
       steps: [
-      { t: 'Someone in Vasant Vihar posts a neighbourhood update', a: 'Post update', run: function () { var x = M.createBroadcast(K().L, REQ.broadcast.update); st.ctx.bpid = x.packetId; select(x.packetId); }, done: function () { return !!st.ctx.bpid; } },
+      { t: 'A neighbour posts a community update', a: 'Post update', run: function () { var x = M.createBroadcast(poster(), updateFor(poster(), 'update')); st.ctx.bpid = x.packetId; select(x.packetId); }, done: function () { return !!st.ctx.bpid; } },
       { t: 'It spreads, but only as far as Relay links reach', a: 'Play', run: function () { play(function () { return false; }); }, done: stalled },
       { t: 'A neighbour shares Relay at the gap', a: 'Share Relay at the gap', run: function () { openInstall(gapNode()); }, done: bridged },
       { t: 'It crosses to the Hauz Khas side', a: 'Play', run: function () { play(function () { return M.nodeHas(K().A, st.ctx.bpid); }); }, done: function () { return !!st.ctx.bpid && M.nodeHas(K().A, st.ctx.bpid); } },
-      { t: 'Priority: an urgent request enters the same links', a: 'Post urgent request + update', run: function () { var b2 = M.createBroadcast(K().L, REQ.broadcast.update2); st.ctx.bpid2 = b2.packetId; var r = M.createRequest(K().L, REQ.broadcast.urgent); st.ctx.urgentPid = r.packetId; st.ctx.urgentTick = S().tick; select(r.packetId); }, done: function () { return !!st.ctx.urgentPid; } },
+      { t: 'Priority: an urgent request enters the same links', a: 'Post urgent request + update', run: function () { var b2 = M.createBroadcast(poster(), updateFor(poster(), 'update2')); st.ctx.bpid2 = b2.packetId; var r = M.createRequest(poster(), urgentFor(poster())); st.ctx.urgentPid = r.packetId; st.ctx.urgentTick = S().tick; select(r.packetId); }, done: function () { return !!st.ctx.urgentPid; } },
       { t: 'Watch which message goes first on a busy link', a: 'Step once', run: function () { pause(); st.notice = ''; doStep(); }, done: function () { return contested().length > 0; } }] }
   };
   function contested() {   // link-capacity waits since the urgent request was posted: the engine's own priority ordering at work
@@ -150,7 +171,7 @@
   /* ---------- engine-derived helpers ---------- */
   function destOf(p) {
     if (!p) return null;
-    if (p.type === 'request') return SCEN[st.scen].dest ? K().E : null;
+    if (p.type === 'request') return SCEN[st.scen].dest ? respNow() : null;
     if (p.type === 'reply') return S().requests[p.requestId].authorNodeId;
     if (p.type === 'ack') return p.payload.toNodeId;
     return null;
@@ -209,7 +230,7 @@
     function ring(id, cls, r) { var n = s.nodes[id]; el('circle', { cx: n.x, cy: n.y, r: r * u, class: 'ring ' + cls, 'stroke-width': 2.4 * u, 'stroke-dasharray': cls === 'gap' ? (4 * u) + ' ' + (3 * u) : '' }, st.ringG); }
     function lab(id, text, cls) { var n = s.nodes[id], right = n.x > 760, t = el('text', { x: n.x + (right ? -1 : 1) * 14 * u, y: n.y + 4 * u, 'text-anchor': right ? 'end' : 'start', class: 'lab ' + (cls || ''), style: 'font-size:' + (12 * u) + 'px;stroke-width:' + (3 * u) + 'px' }, st.labG); t.textContent = text; }
     if (origin) { ring(origin, 'origin', 11); lab(origin, 'Origin · ' + s.nodes[origin].label); }
-    if (dest && dest !== origin) { ring(dest, 'dest', 11); lab(dest, (p.type === 'request' ? 'Possible responder · ' : 'Destination · ') + s.nodes[dest].label, 'dest'); }
+    if (dest && dest !== origin) { ring(dest, 'dest', 11); lab(dest, (p.type === 'request' ? 'Responder · ' : 'Destination · ') + X.nm(dest), 'dest'); }
     Object.keys(cand).forEach(function (id) { ring(id, 'gap', 12); lab(id, s.nodes[id].label + ' · no Relay', 'gap'); });
     if (st.sel && st.sel !== origin && st.sel !== dest && !cand[st.sel]) { ring(st.sel, 'origin', 9); lab(st.sel, X.nm(st.sel)); }
     if (st.vb.w < 380) s.order.forEach(function (id) { var n = s.nodes[id]; if (n.x < st.vb.x - 10 || n.x > st.vb.x + st.vb.w + 10 || n.y < st.vb.y - 10 || n.y > st.vb.y + st.vb.h + 10) return; var t = el('text', { x: n.x + 8 * u, y: n.y - 7 * u, class: 'nl', style: 'font-size:' + (9.5 * u) + 'px;stroke-width:' + (2.5 * u) + 'px' }, st.labG); t.textContent = id; });   // semantic zoom: phone ids appear when zoomed in
@@ -333,7 +354,7 @@
     m.appendChild(h('div', { class: 'row small', style: 'margin-top:4px', id: 'm-cut' }, h('span', {}, 'Relay phones cut off from it'), h('strong', {}, String(g.cutOff.length))));
     if (dest) {
       var dn = s.nodes[dest], got = M.nodeHas(dest, p.id), reach = M.canReach(p.id, dest), dl = got ? ['Reached', 'good'] : !M.canRelay(dest) ? ['No Relay on that phone', 'warn'] : stt.expired ? ['Expired before arriving', 'warn'] : reach ? ['Pending: a Relay route exists', 'info'] : ['Unreachable now: no Relay route', 'warn'];
-      m.appendChild(h('div', { class: 'row', style: 'margin-top:8px', id: 'm-dest' }, h('span', { class: 'small' }, (p.type === 'request' ? 'Possible responder: ' : '') + dn.label), pill(dl[0], dl[1])));
+      m.appendChild(h('div', { class: 'row', style: 'margin-top:8px', id: 'm-dest' }, h('span', { class: 'small' }, (p.type === 'request' ? 'Responder: ' : '') + X.nm(dest)), pill(dl[0], dl[1])));
     }
     scenMetrics(m, p, stt, g); return m;
   }
@@ -387,7 +408,7 @@
     var rows = [['Newly connected', X.nm(ins.id) + ' now runs Relay and touches ' + plural(ins.links, 'Relay phone', 'Relay phones') + '. Relay groups: ' + ins.before.groups + ' → ' + ins.after.groups + '.'],
       ['Newly reachable', plural(ins.newSet.length, 'Relay phone is', 'Relay phones are') + ' now in a group that holds the message. Reachable only means a route exists.'],
       ['Actually received since', got + ' of those ' + ins.newSet.length + ' have received it so far' + (got === ins.newSet.length && got ? ' (all)' : '') + '. Total received: ' + g.holders.length + ' (was ' + ins.before.holders + ' before the install).']];
-    if (st.ctx.replyPid) rows.push(['Responded', 'A volunteer reply now exists (' + (M.nodeHas(K().A, st.ctx.replyPid) ? 'and has reached the requester' : 'still travelling') + ').']);
+    if (st.ctx.replyPid) rows.push(['Responded', 'A reply now exists (' + (M.nodeHas(K().A, st.ctx.replyPid) ? 'and has reached the requester' : 'still travelling') + ').']);
     return h('div', { class: 'card', id: 'changedcard' }, h('div', { class: 'eyebrow' }, 'What changed when Relay was installed'), h('dl', { class: 'cmp' }, rows.map(function (r) { return [h('dt', {}, r[0]), h('dd', {}, r[1])]; }).reduce(function (a, b) { return a.concat(b); }, [])));
   }
   function outcomeCard() {
@@ -397,8 +418,8 @@
     else {
       var ch = X.chain(rp, A); card.appendChild(h('div', { class: 'small', id: 'outcome-state', style: 'margin-top:8px;font-weight:700' }, 'Reached the requester through ' + plural(ch.length - 1, 'hand-off', 'hand-offs') + ' via ' + plural(ch.length, 'phone', 'phones') + '.'));
       if (st.scen === 'missing') card.appendChild(h('p', { class: 'small', id: 'outcome-close', style: 'margin:6px 0 0' }, 'A possible sighting returned. It is unverified: a person still has to check it.'));
-      else if (st.ctx.ackPid && M.nodeHas(K().E, st.ctx.ackPid)) card.appendChild(h('p', { class: 'small', id: 'outcome-close', style: 'margin:6px 0 0;font-weight:700' }, 'A request travelled. Someone responded. Coordination became possible.', h('span', { class: 'muted', style: 'display:block;font-weight:400' }, 'This simulation does not show that anyone was helped. The offer is self-reported and unverified.')));
-      else card.appendChild(h('p', { class: 'small muted', style: 'margin:6px 0 0' }, 'Next: the requester acknowledges the offer, which must travel back to the volunteer.'));
+      else if (st.ctx.ackPid && M.nodeHas(respNow(), st.ctx.ackPid)) card.appendChild(h('p', { class: 'small', id: 'outcome-close', style: 'margin:6px 0 0;font-weight:700' }, 'A request travelled. Someone responded. Coordination became possible.', h('span', { class: 'muted', style: 'display:block;font-weight:400' }, 'This simulation does not show that anyone was helped. The offer is self-reported and unverified.')));
+      else card.appendChild(h('p', { class: 'small muted', style: 'margin:6px 0 0' }, 'Next: the requester acknowledges the offer, which must travel back to the responder.'));
     }
     return card;
   }
@@ -561,7 +582,7 @@
   }
   var STORY_INTERVAL = 640;   // ms between simulated steps while Story plays; Explore keeps its own speed control
   window.RelaySim = { state: st, on: on, api: { SCEN: SCEN, REQ: REQ, setScenario: setScenario, setMode: setMode, curStep: curStep, doStep: doStep, play: play, pause: pause, reset: resetWorld, select: select, mainPid: mainPid,
-    bridged: bridged, gapNode: gapNode, stalled: stalled, sharerFor: sharerFor, join: function (id) { var sh = sharerFor(id); if (!sh) return { ok: false, error: 'No neighbouring phone with Relay is close enough to share it.' }; var r = doJoin(id, sh, mainPid() || st.pid); paint(); return r; }, contested: contested, S: S, K: K } };
+    bridged: bridged, gapNode: gapNode, stalled: stalled, sharerFor: sharerFor, responder: respNow, poster: poster, replyFor: replyFor, updateFor: updateFor, urgentFor: urgentFor, fixed: FIXED, join: function (id) { var sh = sharerFor(id); if (!sh) return { ok: false, error: 'No neighbouring phone with Relay is close enough to share it.' }; var r = doJoin(id, sh, mainPid() || st.pid); paint(); return r; }, contested: contested, S: S, K: K } };
   var qs = location.search + location.hash; setMode(/mode=explore|#explore/.test(qs) ? 'explore' : 'story');
   boot();
 })();

@@ -37,7 +37,8 @@
   var STEPS = { emergency: ['Need', 'Spread', 'Gap', 'Connection', 'Response'], missing: ['Need', 'Spread', 'Gap', 'Connection', 'Response'], broadcast: ['News', 'Spread', 'Gap', 'Connection', 'Priority'] };
 
   /* ================= which moment are we in? derived from the engine ================= */
-  function origin() { return st.scen === 'broadcast' ? K().L : K().A; }
+  function origin() { return st.scen === 'broadcast' ? API.poster() : K().A; }
+  function area(id) { return S().nodes[id].area; }
   function pathMoment(pid) {
     var ctx = st.ctx;
     if (V.decision) return { id: 'decision' };
@@ -46,7 +47,7 @@
     return { id: 'spread' };
   }
   function moment() {
-    var ctx = st.ctx, sc = st.scen, A = K().A, E = K().E, rp = API.mainPid();
+    var ctx = st.ctx, sc = st.scen, A = K().A, E = API.responder(), rp = API.mainPid();
     if (sc === 'broadcast') {
       if (!ctx.bpid) return { id: 'need' };
       if (ctx.urgentPid) return API.contested().length ? { id: 'contest' } : { id: 'ready' };
@@ -54,9 +55,9 @@
       return pathMoment(ctx.bpid);
     }
     if (!ctx.rid) return { id: 'need' };
-    if (ctx.ackPid) return M.nodeHas(E, ctx.ackPid) ? { id: 'done' } : { id: 'ack' };
+    if (ctx.ackPid) return E && M.nodeHas(E, ctx.ackPid) ? { id: 'done' } : { id: 'ack' };
     if (ctx.replyPid) return M.nodeHas(A, ctx.replyPid) ? (sc === 'missing' ? { id: 'done' } : { id: 'arrived' }) : { id: 'return' };
-    if (M.nodeHas(E, rp)) return { id: 'respond' };
+    if (E && M.nodeHas(E, rp)) return { id: 'respond' };
     return pathMoment(rp);
   }
   function tracked(m) {
@@ -116,11 +117,11 @@
   function relayNeighbours(id) { return S().adj[id].filter(M.canRelay); }
   function uniq(a) { var o = {}; return a.filter(function (x) { return o[x] ? false : (o[x] = 1); }); }
   function focusFor(m, T) {
-    var s = S(), all = s.order, o = origin(), E = K().E, A = K().A, ids, pad = 80, minW = 600;
+    var s = S(), all = s.order, o = origin(), E = API.responder(), A = K().A, ids, pad = 80, minW = 600;
     function around(list) { var out = list.slice(); list.forEach(function (i) { out = out.concat(relayNeighbours(i)); }); return uniq(out); }
     if (V.wide) return fitVB(all, 28, 0);
     switch (m.id) {
-      case 'need': ids = around([o]); minW = 560; break;
+      case 'need': return fitVB(around([o]), 80, 560, 285);
       case 'spread': ids = around(M.holders(T.pid).filter(M.canRelay)); break;
       case 'decision': ids = around([V.decision.src]).concat([V.decision.a.to, V.decision.b.to]); minW = 560; pad = 90; break;
       case 'gap': case 'return': case 'ack': case 'intro': return fitVB(all, 28, 0);
@@ -206,8 +207,8 @@
     var tracking = T.pid != null, oLabel = { emergency: 'Needs help', missing: 'Looking for a child', broadcast: 'Posted the update' }[sc];
     if (m.id === 'need' || (tracking && m.id !== 'contest' && m.id !== 'ready')) { ring(o, 'origin', 10.5); lab(o, oLabel); }
     if (m.id === 'ready') ring(o, 'origin', 10.5);
-    var E = K().E, A = K().A;
-    if (sc !== 'broadcast' && (['respond', 'return', 'arrived', 'ack', 'done', 'crossing'].indexOf(m.id) >= 0 || (T.pid && M.nodeHas(E, API.mainPid() || '')))) { ring(E, 'resp', 10.5); lab(E, s.nodes[E].label, 'teal'); }
+    var E = API.responder(), A = K().A;
+    if (sc !== 'broadcast' && E && ['respond', 'return', 'arrived', 'ack', 'done'].indexOf(m.id) >= 0) { ring(E, 'resp', 10.5); lab(E, 'Responder', 'teal'); }
     if ((m.id === 'return' || m.id === 'arrived' || m.id === 'ack' || m.id === 'done') && sc !== 'broadcast') { ring(A, 'origin', 10.5); }
     if (m.id === 'gap' && T.bridge) bridgeAffordance(T.bridge);
     if ((m.id === 'connect' || m.id === 'crossing') && st.ctx.install) { ring(st.ctx.install.id, 'joined', 11); lab(st.ctx.install.id, 'Joined Relay', 'teal'); }
@@ -236,7 +237,7 @@
     var c = st.ctx, list = API.contested().filter(function (x) { return x.w.winner === c.urgentPid; }); return list.length ? list[0] : (API.contested()[0] || null);
   }
   function copyFor(m, T) {
-    var sc = st.scen, c = st.ctx, s = S(), A = K().A, E = K().E, held = T.held, relay = T.relay, g = T.pid ? X.groupsFor(T.pid) : null, name = lc(s.nodes[E].label);
+    var sc = st.scen, c = st.ctx, s = S(), A = K().A, E = API.responder(), held = T.held, relay = T.relay, g = T.pid ? X.groupsFor(T.pid) : null;
     var out = { head: '', sub: '', metrics: [], primary: null, info: false, done: false };
     var base = sc === 'broadcast' ? 'update' : 'request';
     function playBtn() { return { label: playing() ? 'Pause' : 'Resume', fn: togglePlay, kind: 'toggle' }; }
@@ -244,7 +245,7 @@
       case 'need':
         if (sc === 'emergency') { out.head = 'Mobile networks are down. Someone needs help.'; out.sub = 'A person in Hauz Khas needs medical assistance but can’t make a call.'; }
         else if (sc === 'missing') { out.head = 'A child is missing. Nobody can phone around.'; out.sub = 'A parent in Hauz Khas is looking for a child last seen near Lodhi Colony.'; }
-        else { out.head = 'A neighbour has useful news.'; out.sub = 'A water point is open in Vasant Vihar. It isn’t an emergency.'; }
+        else { out.head = 'A neighbour has useful news.'; out.sub = 'A water point is open in ' + area(API.poster()) + '. It isn’t an emergency.'; }
         out.primary = { label: sc === 'broadcast' ? 'Send update' : 'Send request', fn: actSend }; out.info = true; break;
       case 'spread':
         out.head = sc === 'missing' ? 'Relay favors phones closer to the last-known area.' : sc === 'broadcast' ? 'Updates travel the same way.' : 'One request. Passed from phone to phone.';
@@ -264,14 +265,14 @@
         var ns = c.install ? c.install.newSet : [], got = ns.filter(function (i) { return M.nodeHas(i, T.pid); }).length;
         out.head = 'The ' + base + ' is crossing.'; out.sub = got + ' of the ' + ns.length + ' newly reachable phones have it.'; out.metrics = [{ v: held, l: 'received' }]; out.primary = playBtn(); break; }
       case 'respond':
-        if (sc === 'missing') { out.head = 'The request reached a phone near the clinic.'; out.sub = 'That phone can send a possible sighting.'; out.primary = { label: 'Send a sighting', fn: actReply }; }
-        else { out.head = 'The request reached someone who could respond.'; out.sub = s.nodes[E].label + '’s phone has the request.'; out.primary = { label: 'Send an offer', fn: actReply }; }
+        if (sc === 'missing') { out.head = 'The request reached a phone on the other side.'; out.sub = 'Its owner can send a possible sighting.'; out.primary = { label: 'Send a sighting', fn: actReply }; }
+        else { out.head = 'The request reached someone who could respond.'; out.sub = 'A person in ' + area(E) + ' has the request.'; out.primary = { label: 'Send an offer', fn: actReply }; }
         out.metrics = [{ v: held, l: 'phones have the request' }]; break;
       case 'return':
-        out.head = sc === 'missing' ? 'A possible sighting was sent.' : 'The volunteer replied.'; out.sub = sc === 'missing' ? 'It’s still travelling back.' : 'The reply is still travelling.';
+        out.head = sc === 'missing' ? 'A possible sighting was sent.' : 'A nearby person replied.'; out.sub = sc === 'missing' ? 'It’s still travelling back.' : 'The reply is still travelling.';
         out.metrics = [{ v: held, l: 'phones have the reply' }]; out.primary = playBtn(); break;
       case 'arrived':
-        out.head = 'The volunteer’s reply reached the requester.'; out.sub = 'The offer is self-reported and unverified.'; out.primary = { label: 'Acknowledge the offer', fn: actAck }; break;
+        out.head = 'The reply reached the requester.'; out.sub = 'The offer is self-reported and unverified.'; out.primary = { label: 'Acknowledge the offer', fn: actAck }; break;
       case 'ack':
         out.head = 'The requester acknowledged the offer.'; out.sub = 'The acknowledgment is still travelling.'; out.metrics = [{ v: held, l: 'phones have it' }]; out.primary = playBtn(); break;
       case 'done':
@@ -320,15 +321,15 @@
     return cardEl(missing ? 'Missing person' : urgent ? 'Urgent' : 'Request', missing ? 'info' : 'urgent', q.title, q.description, q.area, draft);
   }
   function previewSpecs(m, T) {
-    var sc = st.scen, c = st.ctx, A = K().A, E = K().E, out = [], rid = c.rid;
+    var sc = st.scen, c = st.ctx, A = K().A, E = API.responder(), out = [], rid = c.rid;
     function view(n) { var v = rid && M.requestView(n, rid); return v ? v.label : ''; }
     if (sc === 'broadcast') {
-      var L = K().L, bp = c.bpid;
-      if (m.id === 'need') out.push({ node: L, mode: 'full', title: 'Neighbour’s phone', cards: [cardEl('Community update', 'neutral', 'Water point open', API.REQ.broadcast.update.text, API.REQ.broadcast.update.area, true)], status: 'Draft', cls: 'mute' });
-      else if (m.id === 'spread' && bp) out.push({ node: L, mode: 'chip', title: 'Neighbour’s phone', label: M.sentObserved(L, bp) ? 'Shared with a nearby phone' : 'Saved on this phone' });
+      var L = API.poster(), bp = c.bpid, lt = 'Neighbour’s phone · ' + area(L);
+      if (m.id === 'need') out.push({ node: L, mode: 'full', title: lt, cards: [cardEl('Community update', 'neutral', 'Water point open', API.updateFor(L, 'update').text, API.updateFor(L, 'update').area, true)], status: 'Draft', cls: 'mute' });
+      else if (m.id === 'spread' && bp) out.push({ node: L, mode: 'chip', title: lt, label: M.sentObserved(L, bp) ? 'Shared with a nearby phone' : 'Saved on this phone' });
       else if (m.id === 'ready') {
         var q = [c.urgentPid, c.bpid2].filter(Boolean).sort(function (x, y) { return S().packets[x].prio - S().packets[y].prio; });
-        out.push({ node: L, mode: 'full', title: 'Neighbour’s phone · waiting to send', cards: q.map(function (pid) { var i = X.packetInfo(pid); return h('div', { class: 'chipmsg ' + (pid === c.urgentPid ? 'first' : 'wait') }, i.name, h('em', {}, pid === c.urgentPid ? 'urgent' : 'update')); }), status: 'Both are saved on this phone', cls: 'mute' });
+        out.push({ node: L, mode: 'full', title: lt + ' · waiting to send', cards: q.map(function (pid) { var i = X.packetInfo(pid); return h('div', { class: 'chipmsg ' + (pid === c.urgentPid ? 'first' : 'wait') }, i.name, h('em', {}, pid === c.urgentPid ? 'urgent' : 'update')); }), status: 'Both are saved on this phone', cls: 'mute' });
       }
       else if (m.id === 'intro' && bp) out.push({ node: A, mode: 'full', title: 'A phone in Hauz Khas', cards: M.receivedBroadcasts(A).slice(0, 1).map(function (p) { return cardEl('Community update', 'neutral', p.payload.category + ' update', p.payload.text, p.payload.area); }), status: 'Received on this phone', cls: 'ok' });
       return out;
@@ -336,14 +337,14 @@
     if (m.id === 'need') out.push({ node: A, mode: 'full', title: 'Requester’s phone · Hauz Khas', cards: [requestCard(A, null, true)], status: 'Draft', cls: 'mute' });
     else if (m.id === 'spread' && rid) out.push({ node: A, mode: 'chip', title: 'Requester’s phone', label: view(A), cards: [requestCard(A, rid)], status: view(A) });
     else if (m.id === 'respond' && rid) {
-      var cs = M.caseState(E, rid), draft = API.REQ[sc].reply;
-      out.push({ node: E, mode: 'full', title: S().nodes[E].label + '’s phone', cards: [requestCard(E, rid), cardEl(sc === 'missing' ? 'Possible sighting' : 'Draft reply', 'warn', draft.kind === 'sighting' ? 'Possible sighting' : 'Offer of help', draft.note, draft.area, true)], status: view(E), cls: 'mute' });
-    } else if (m.id === 'return' && rid) out.push({ node: E, mode: 'chip', title: S().nodes[E].label + '’s phone', label: view(E) });
+      var draft = API.replyFor(E);
+      out.push({ node: E, mode: 'full', title: 'Responder’s phone · ' + area(E), cards: [requestCard(E, rid), cardEl(sc === 'missing' ? 'Possible sighting' : 'Draft reply', 'warn', draft.kind === 'sighting' ? 'Possible sighting' : 'Offer of help', draft.note, draft.area, true)], status: view(E), cls: 'mute' });
+    } else if (m.id === 'return' && rid) out.push({ node: E, mode: 'chip', title: 'Responder’s phone · ' + area(E), label: view(E) });
     else if ((m.id === 'arrived' || m.id === 'ack' || m.id === 'done') && rid) {
       var rep = M.repliesAt(A, rid)[0], sight = rep && rep.payload.kind === 'sighting', lbl = sight ? 'Possible sighting received' : view(A);
       if (m.id === 'arrived' || m.id === 'done') {
         out.push({ node: A, mode: 'full', title: 'Requester’s phone', cards: [rep ? cardEl('Unverified', 'warn', sight ? 'Possible sighting' : 'Offer of help', rep.payload.note, rep.payload.area) : null].filter(Boolean), status: lbl, cls: 'ok' });
-        if (m.id === 'done' && sc !== 'missing') out.push({ node: E, mode: 'chip', title: S().nodes[E].label + '’s phone', label: view(E) });
+        if (m.id === 'done' && sc !== 'missing') out.push({ node: E, mode: 'chip', title: 'Responder’s phone · ' + area(E), label: view(E) });
       } else out.push({ node: A, mode: 'chip', title: 'Requester’s phone', label: view(A) });
     }
     return out;
@@ -364,35 +365,38 @@
     var sig = JSON.stringify([m.id, specs.map(function (x) { return [x.node, x.mode, x.label, x.status, V.open[x.node + x.mode + m.id]]; }), pops, st.scen, V.decision && V.decision.src, firstContest() && firstContest().tick]);
     if (sig !== V.sig) {
       V.sig = sig; clear(ov); V.anchored = [];
-      specs.forEach(function (sp) { var e = phoneEl(sp, sp.node + sp.mode + m.id); ov.appendChild(e); V.anchored.push({ el: e, node: sp.node, side: 'auto' }); });
+      specs.forEach(function (sp) { var e = phoneEl(sp, sp.node + sp.mode + m.id); e.setAttribute('data-node', sp.node); ov.appendChild(e); V.anchored.push({ el: e, node: sp.node, side: 'auto' }); });
       if (pops.indexOf('consent') >= 0) { var b = API.gapNode(), sh = API.sharerFor(b);
-        var pop = h('div', { class: 'pop', id: 's-consent', role: 'dialog', 'aria-label': 'Let this phone join Relay' }, h('b', {}, 'Let this phone join Relay?'), h('p', {}, (sh ? X.nm(sh) : 'A neighbour') + ' offers Relay to this phone. If its owner accepts, it joins.'),
+        var pop = h('div', { class: 'pop', id: 's-consent', role: 'dialog', 'aria-label': 'Let this phone join Relay' }, h('b', {}, 'Let this phone join Relay?'), h('p', {}, 'A nearby phone offers Relay to this one. If its owner accepts, it joins.'),
           h('div', { class: 'row' }, h('button', { class: 'go', id: 's-accept', on: { click: actJoin } }, 'Accept'), h('button', { id: 's-notnow', on: { click: function () { V.consent = false; render(); } } }, 'Not now')), h('small', {}, 'Simulated. Nothing is installed.'));
-        ov.appendChild(pop); V.anchored.push({ el: pop, node: b, side: 'auto' }); }
+        pop.setAttribute('data-node', b); ov.appendChild(pop); V.anchored.push({ el: pop, node: b, side: 'auto' }); }
       if (pops.indexOf('decision') >= 0) { var d = V.decision, ta = X.targetNames(S().packets[T.pid].route);
         var dp = h('div', { class: 'pop decision', id: 's-decision' }, h('b', {}, 'One phone, two neighbours'),
           h('div', { class: 'cand a' }, h('strong', {}, 'A · ' + S().nodes[d.a.to].area + ' · gets it'), d.a.text),
           h('div', { class: 'cand b' }, h('strong', {}, 'B · ' + S().nodes[d.b.to].area + (d.b.det ? ' · detour' : ' · held back')), d.b.text));
-        ov.appendChild(dp); V.anchored.push({ el: dp, node: d.src, side: 'auto', avoid: [d.a.to, d.b.to] }); }
+        ov.appendChild(dp); V.anchored.push({ el: dp, node: d.src, side: 'auto', avoid: [d.a.to, d.b.to], strong: [d.src, d.a.to, d.b.to] }); }
       if (pops.indexOf('contest') >= 0) { var cc = firstContest(), s = S();
         if (cc) { var bx = h('div', { class: 'contest', id: 's-contest' }, h('b', {}, 'Link busy · one message per step'),
           h('div', { class: 'chipmsg first' }, X.packetInfo(cc.w.winner).name, h('em', {}, 'went first')), h('div', { class: 'chipmsg wait' }, X.packetInfo(cc.w.pid).name, h('em', {}, 'waited')));
-          ov.appendChild(bx); V.anchored.push({ el: bx, node: cc.w.to, side: 'auto' }); } }
+          ov.appendChild(bx); V.anchored.push({ el: bx, node: cc.w.to, side: 'auto', avoid: s.adj[cc.w.from].filter(M.canRelay), strong: [cc.w.from, cc.w.to] }); } }
     }
     positionOverlays();
   }
   function positionOverlays() {
     var sb = stageBox(), s = S();
     V.anchored.forEach(function (a) {
-      var n = s.nodes[a.node], p = toScreen(n.x, n.y), w = a.el.offsetWidth || 250, hh = a.el.offsetHeight || 120;
-      var keep = (a.avoid || s.adj[a.node].filter(M.canRelay)).concat([a.node]).map(function (i) { var q = toScreen(s.nodes[i].x, s.nodes[i].y); return { x: q.x, y: q.y }; });
-      var cx = 0; keep.slice(0, -1).forEach(function (q) { cx += q.x - p.x; });
-      var cand = [{ x: p.x + 24, y: p.y - hh / 2 }, { x: p.x - w - 24, y: p.y - hh / 2 }, { x: p.x - w / 2, y: p.y + 22 }, { x: p.x - w / 2, y: p.y - hh - 22 }];
-      if (cx > 0) { var t = cand[0]; cand[0] = cand[1]; cand[1] = t; }          // start with the side away from the neighbours
-      var best = null;
+      var n = s.nodes[a.node], p = toScreen(n.x, n.y), w = a.el.offsetWidth || 250, hh = a.el.offsetHeight || 120, chip = a.el.className.indexOf('chip') >= 0;
+      var keep = (a.avoid || s.adj[a.node].filter(M.canRelay)).map(function (i) { var q = toScreen(s.nodes[i].x, s.nodes[i].y); return { x: q.x, y: q.y }; });
+      var cx = 0; keep.forEach(function (q) { cx += q.x - p.x; });
+      var labelRight = n.x <= 800, lab = { x0: labelRight ? p.x - 16 : p.x - 160, x1: labelRight ? p.x + 160 : p.x + 16, y0: p.y - 16, y1: p.y + 16 };   // the phone and its text label
+      var side = [{ x: p.x + 24, y: p.y - hh / 2 }, { x: p.x - w - 24, y: p.y - hh / 2 }], above = { x: p.x - w / 2, y: p.y - hh - 24 }, below = { x: p.x - w / 2, y: p.y + 24 };
+      if (cx > 0) side.reverse();
+      var cand = chip ? [above, below].concat(side) : side.concat([below, above]), best = null;
       cand.forEach(function (c) {
         var x = Math.max(10, Math.min(sb.w - w - 10, c.x)), y = Math.max(10, Math.min(sb.h - hh - 10, c.y)), hit = 0;
         keep.forEach(function (q) { if (q.x > x - 12 && q.x < x + w + 12 && q.y > y - 12 && q.y < y + hh + 12) hit++; });
+        if (x < lab.x1 && x + w > lab.x0 && y < lab.y1 && y + hh > lab.y0) hit += 100;   // never sit on the phone it describes
+        (a.strong || []).forEach(function (id) { var q = toScreen(s.nodes[id].x, s.nodes[id].y); if (q.x > x - 16 && q.x < x + w + 16 && q.y > y - 16 && q.y < y + hh + 16) hit += 100; });   // nor on the ends of the link it explains
         if (!best || hit < best.hit) best = { x: x, y: y, hit: hit };
       });
       a.el.style.left = best.x + 'px'; a.el.style.top = best.y + 'px';
@@ -432,6 +436,7 @@
     if (reduce || st.mode !== 'story') return; var m = moment(), tp = tracked(m), s = S(), ids = {};
     if (m.id === 'contest' || m.id === 'ready') { [st.ctx.urgentPid, st.ctx.bpid, st.ctx.bpid2].forEach(function (x) { if (x) ids[x] = 1; }); } else if (tp) ids[tp] = 1;
     var t0 = performance.now(), dur = Math.min(520, (st.interval || 640) * 0.8);
+    V.dots = V.dots.filter(function (d) { return t0 - d.t0 < d.dur; });   // a dot from an earlier step never lingers into the next one
     rep.moves.forEach(function (mv) { if (!ids[mv.pid]) return; V.why[mv.from + '|' + mv.to + '|' + mv.pid] = mv.text;
       var typ = s.packets[mv.pid].type; V.dots.push({ a: s.nodes[mv.from], b: s.nodes[mv.to], t0: t0, dur: dur, cls: typ === 'reply' || typ === 'ack' ? 'rep' : (mv.pid === st.ctx.urgentPid ? 'urg' : 'req') }); });
     if (V.dots.length && !V.raf) V.raf = requestAnimationFrame(frame);
@@ -478,6 +483,7 @@
     renderOverlays(m, T);
     var sc = $('s-scenario'); if (sc.value !== st.scen) sc.value = st.scen;
     var key = $('s-key'); clear(key);
+    if (m.id === 'need') { $('s-key').hidden = true; return; } $('s-key').hidden = false;   // nothing can be "received" yet, so no key on the first screen
     [['', 'Not yet received'], ['held', 'Received'], ['off', 'No Relay']].concat(T.kind === 'rep' && T.pid ? [['rep', 'Has the reply']] : [], m.id === 'connect' || m.id === 'crossing' ? [['reach', 'Reachable, not received']] : [], m.id === 'gap' ? [['cut', 'Cut off']] : [])
       .forEach(function (x) { key.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
   }
