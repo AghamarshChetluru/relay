@@ -73,14 +73,16 @@ for (const kind of ['emergency', 'missing']) section('C ' + kind, () => {
   ok(d.newlyConnected.every(i => !before.connected.includes(i) && !before.holders.includes(i)), kind + ': no phone that was already connected or already held it is counted as new');
   ok(after.holders.length + after.connected.length === before.holders.length + before.connected.length + d.newlyConnected.length + 1, kind + ': connected-after = connected-before + newly connected + the bridge (' + (before.holders.length + before.connected.length) + ' + ' + d.newlyConnected.length + ' + 1 = ' + (after.holders.length + after.connected.length) + ')');
   ok(d.newlyConnected.length < after.connected.length || before.connected.length === 0, kind + ': newly connected (' + d.newlyConnected.length + ') is not the same as everything now connected (' + after.connected.length + ')' + (before.connected.length ? ', which would also count ' + before.connected.length + ' already-connected phone(s)' : ''));
-  if (kind === 'missing') ok(before.connected.length === 1 && d.newlyConnected.length === 31 && after.connected.length === 33, 'missing person reproduction: 1 already connected, 31 truly new, v4 would have shown 33');
+  if (kind === 'missing') ok(d.newlyConnected.length === 31 && after.connected.length === 32 && before.connected.length === 0, 'missing person on the V4.2 topology: 0 already connected, 31 truly new, the bridge is the 32nd connected phone (V4.1 had 1 already connected and 31 new: counting everything now connected would have said 33)');
 });
 
 /* ================= D. connected is not eligible ================= */
 section('D policy', () => { M.reset(); const r = MP(), pid = r.packetId; untilStop(pid); join(); untilStop(pid, 400); const q = X.reach(pid), sr = X.stopReason(pid);
   ok(!M.stats(pid).canMove && q.eligibleNext.length === 0 && q.connected.length > 0, 'missing person after the bridge: nothing is eligible next, yet ' + q.connected.length + ' phones are connected to a holder');
-  ok(q.heldBack.length + q.connectedOther.length === q.connected.length && q.heldBack.length === 3 && q.connectedOther.length === 8, 'those split by the routing plan: ' + q.heldBack.length + ' next to a holder that withholds it, ' + q.connectedOther.length + ' not next to any holder');
-  ok(sr.code === 'policy' && sr.connected === 11 && sr.cutOff === 1, 'the stop is classified as routing policy (11 connected, not eligible) with a separate 1-phone gap, not "a gap"');
+  ok(q.heldBack.length + q.connectedOther.length === q.connected.length && q.heldNow.length + q.heldFixed.length === q.heldBack.length && q.connectedOther.length > 0, 'those split by the routing plan: ' + q.heldNow.length + ' next to a holder that is not selecting them now, ' + q.heldFixed.length + ' blocked for this copy, ' + q.connectedOther.length + ' not next to any holder');
+  ok(q.holders.length === 53 && q.connected.length === 10 && q.heldNow.length === 1 && q.heldFixed.length === 1 && q.connectedOther.length === 8 && q.cutOff.length === 1, 'engine snapshot for the shipped V4.2 topology: 53 hold it, 10 connected (1 not selected now, 1 blocked for this copy, 8 not adjacent), 1 cut off');
+  ok(sr.code === 'policy' && sr.connected === q.connected.length && sr.cutOff === q.cutOff.length && sr.cutOff > 0 && sr.cutOff < sr.connected, 'the stop is classified as routing policy (' + sr.connected + ' connected, not eligible) with a separate ' + sr.cutOff + '-phone gap, not "a gap"');
+  ok(sr.waiting && sr.wakeTick > M.state().tick, 'and it is reported as not final: a time-based detour is due at minute ' + sr.wakeTick);
   ok(q.cutOff.length === 1 && X.groupsFor(pid).cutOff.length === 1, 'only genuinely disconnected phones are called cut off');
   const e = X.neighbours(q.heldBack[0], pid); ok(e.length > 0, 'a held-back phone can be inspected');
 });
@@ -95,7 +97,7 @@ section('D invariant', () => { /* invariant over every step of both flows: eligi
 
 /* ================= E. a forwarding decision is a statement about ONE tick ================= */
 section('E decision', () => { M.reset(); const r = MP(), pid = r.packetId; M.step(); const d1 = X.decisionPair(pid); ok(d1 && d1.tick === S().tick && d1.pid === pid, 'a decision carries the tick it describes (' + (d1 && d1.tick) + ')');
-  ok(X.decide(d1.src, d1.b.to, pid).verdict === 'withhold' || d1.b.det, 'at that tick, B really is held back (or a detour)');
+  ok(X.decide(d1.src, d1.b.to, pid).verdict === 'withhold' || d1.b.det, 'at that tick, B really is not selected (or a detour)');
   M.step(); const d2 = X.decisionPair(pid);
   ok(!d2 || d2.tick !== d1.tick, 'after one more step a fresh decision (or none) is computed for the new tick, never the old object');
   const heldBefore = d1.b.det ? null : d1.b.to; ok(heldBefore === null || X.decide(d1.src, heldBefore, pid).verdict !== 'withhold' || M.nodeHas(heldBefore, pid) || d2 === null || d2.b.to !== heldBefore || true, 'recomputation, not caching, is what keeps explanations true');

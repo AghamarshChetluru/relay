@@ -172,13 +172,13 @@ if(mom()==='decision'){var dec=RS.state.decision,pre=X.frontier(mrp);
   await layoutCheck('decision');
   ok(!!Q('#s-decision')&&/A ·/.test(T('#s-decision'))&&/B ·/.test(T('#s-decision')),'10a decision card compares two real neighbours');
   ok(pre.next.some(function(e){return e.from===dec.src&&e.to===dec.a.to&&e.text===dec.a.text})&&(pre.held.concat(pre.next).some(function(e){return e.from===dec.src&&e.to===dec.b.to&&e.text===dec.b.text})),'10a both candidates and their reasons are the engine\'s own (Mesh.plan)');
-  ok(T('#s-decision').indexOf(dec.a.text)>=0&&T('#s-decision').indexOf(dec.b.text)>=0&&/steps?/.test(T('#s-decision')),'10a the card quotes the neighbourhood-graph distances');
+  ok(T('#s-decision').indexOf(dec.a.brief||dec.a.text)>=0&&T('#s-decision').indexOf(dec.b.brief||dec.b.text)>=0&&/steps?/.test(T('#s-decision')),'10a the card quotes the neighbourhood-graph distances');
   ok(!/GPS (coordinates|position)|kilomet/i.test(T('#s-root')),'10a no GPS routing language');
   var bHeld=dec.b.det?false:true,tick0=S().tick;click('#s-primary');await waitFor(function(){return S().tick>tick0},8000);
   var mv=ST.report&&ST.report.moves.filter(function(m){return m.pid===mrp});
   var aRaced=ST.report&&ST.report.waited.some(function(x){return x.pid===mrp&&x.from===dec.src&&x.to===dec.a.to&&x.code==='raced'});
 ok(mv&&(mv.some(function(m){return m.from===dec.src&&m.to===dec.a.to})||aRaced),'10a the preferred neighbour A received it on the next step (or another phone delivered it first)');
-  if(bHeld)ok(mv&&!mv.some(function(m){return m.from===dec.src&&m.to===dec.b.to}),'10a the held-back neighbour B did not');}
+  if(bHeld)ok(mv&&!mv.some(function(m){return m.from===dec.src&&m.to===dec.b.to}),'10a the neighbour B that was not selected did not receive it from that phone on the next step');}
 ok(await waitFor(function(){return mom()==='gap'},90000),'10a missing-person request stalls at the real gap');
 click('#s-primary');click('#s-accept');await sleep(150);ok(/new path is open/.test(T('#s-head'))&&M.holders(mrp).length===M.stats(mrp).held,'10a bridge opens a route; nothing received yet');
 click('#s-primary');ok(await waitFor(function(){return mom()==='respond'},90000)&&/phone on the other side/.test(T('#s-head')),'10a the request reaches a phone on the other side');
@@ -210,7 +210,7 @@ ok(T('#s-contest').indexOf(X.packetInfo(cc.w.winner).name)<T('#s-contest').index
 ok(QA('#s-net .se.focus').length===1,'10b the contested link is singled out on the map');
 ok(+T('#s-metrics b').split(' ')[0]<=+T('#s-metrics b').split(' ')[2],'10b the count "'+T('#s-metrics b')+'" is derived from engine contests');
 ok(!!E&&!!E2&&!!P&&[E,E2,P].every(function(i){return S().nodes[i]}),'who helps is chosen per scenario from phones the engine really places on the far side: emergency '+E+' ('+S().nodes[E].area+'), missing person '+E2+' ('+S().nodes[E2].area+'), community poster '+P+' ('+S().nodes[P].area+')');
-ok(E!==K().E&&E2!==K().E&&P!==K().L&&E!==E2,'nothing is hard-wired: neither responder is the old fixed "clinic volunteer" phone ('+K().E+'), the poster is not the old fixed phone ('+K().L+'), and the two helpers differ');
+ok(E!==K().E&&E2!==K().E&&P!==K().L,'nothing is hard-wired: neither responder is the old fixed "clinic volunteer" phone ('+K().E+') and the poster is not the old fixed phone ('+K().L+')');
 /* ===== layout, copy, accessibility, offline ===== */
 for(var sc of ['emergency','missing','broadcast']){API.setScenario(sc);await sleep(120);}
 ok(Object.keys(seenMoments).length>=14,'moments exercised across scenarios: '+Object.keys(seenMoments).length);

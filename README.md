@@ -18,7 +18,7 @@ Offline-first community help and missing-person coordination for when cellular n
 ## Run the browser prototype (no server, no internet)
 
 Open `prototype/index.html` (mobile app; best at ~390 px wide) and `prototype/simulator.html` (laptop) directly in Chrome. See `docs/DEMO_INSTRUCTIONS.txt`.
-The desktop simulator opens in **Story** mode (follow one message through the network); **Explore** keeps the technical tools (`simulator.html?mode=explore`). Design and truthfulness notes: `docs/SIMULATOR_V4_DESIGN.md` (screenshots in `docs/screenshots/sim-v4/`); the previous explanation-first design is in `docs/SIMULATOR_V3_DESIGN.md`. The V4.1 logic and semantics audit (what the simulator claimed vs what the engine state was, and the fixes) is `docs/SIMULATOR_V4_LOGIC_AUDIT.md`.
+The desktop simulator opens in **Story** mode (follow one message through the network); **Explore** keeps the technical tools (`simulator.html?mode=explore`). Design and truthfulness notes: `docs/SIMULATOR_V4_DESIGN.md` (screenshots in `docs/screenshots/sim-v4/`); the previous explanation-first design is in `docs/SIMULATOR_V3_DESIGN.md`. The V4.1 logic and semantics audit (what the simulator claimed vs what the engine state was, and the fixes) is `docs/SIMULATOR_V4_LOGIC_AUDIT.md`. The V4.2 topology and directed-routing audit (encounter rules, forwarding policy, the 90-pair matrix) is `docs/SIMULATOR_V42_ROUTING_AUDIT.md`.
 
 ## Run the tests
 

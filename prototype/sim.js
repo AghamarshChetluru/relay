@@ -239,6 +239,8 @@
   }
 
   /* ---------- explanations ---------- */
+  /* A stop can be temporary: a phone that has held a steered message long enough may try a bounded detour. Say so, with the minute, so nothing "stopped" moves later unannounced. */
+  function waitNote(sr) { return sr.waiting && sr.wakeTick != null ? ' This is not final: at simulated minute ' + sr.wakeTick + ' (' + (sr.wakeTick - S().tick) + ' from now) a phone that has held it long enough may try a bounded detour, if nothing else changes.' : ''; }
   function narrative(p, stt, g, fr) {
     if (st.notice) return { head: 'Heads up', body: st.notice, tone: 'warn' };
     if (!p) return { head: 'Nothing has been posted yet', body: 'Press the blue button to create the first message. Nothing moves until you press Play or Step.', tone: 'neutral' };
@@ -248,8 +250,8 @@
     if (sr.code === 'moving') { var dd = destOf(p), arrived = dd && dd !== p.originNodeId && M.nodeHas(dd, p.id);
       return { head: 'Spreading phone to phone', body: have + ', in ' + plural(hoodsWith, 'cluster', 'clusters') + '. Each step moves it one hop, and only between phones that are neighbours and both run Relay.' + (arrived ? ' It has already reached ' + X.nm(dd) + ' and keeps spreading, because this policy sends to every neighbour rather than steering toward one phone.' : ''), tone: 'info' }; }
     if (sr.code === 'complete') return { head: 'Reached every phone it can', body: have + ': that is all of them. Phones without Relay cannot carry it.', tone: 'good' };
-    if (sr.code === 'gap') return { head: 'Stalled: no route across the gap', body: have + '. ' + X.nm(sr.bridge) + ' has no Relay, and it is the only link between two groups of Relay phones. If its owner accepts, ' + stt.unlock[sr.bridge] + ' more phones become connected to a holder (connected is not received).' + (sr.connected ? ' ' + plural(sr.connected, 'phone is', 'phones are') + ' already connected to a holder but not eligible under this packet’s routing policy.' : ''), tone: 'warn' };
-    if (sr.code === 'policy') return { head: 'Stopped by its routing policy', body: have + '. ' + plural(sr.connected, 'more phone is', 'more phones are') + ' connected to a holder through Relay phones, but this packet’s ' + (p.route.policy === 'flood' ? 'hop or lifetime limit' : 'routing rule') + ' does not hand it to them (' + sr.heldBack + ' next to a holder that holds it back, ' + sr.notAdjacent + ' not next to any holder).' + (sr.cutOff ? ' ' + plural(sr.cutOff, 'more phone is', 'more phones are') + ' cut off by a gap.' : '') + ' Connected does not mean it will be delivered.', tone: 'warn' };
+    if (sr.code === 'gap') return { head: 'Stalled: no route across the gap', body: have + '. ' + X.nm(sr.bridge) + ' has no Relay, and it is the only link between two groups of Relay phones. If its owner accepts, ' + plural(stt.unlock[sr.bridge], 'more phone becomes', 'more phones become') + ' connected to a holder (connected is not received).' + (sr.connected ? ' ' + plural(sr.connected, 'phone is', 'phones are') + ' already connected to a holder but not eligible under this packet’s routing policy.' : '') + waitNote(sr), tone: 'warn' };
+    if (sr.code === 'policy') return { head: 'Stopped by its routing policy', body: have + '. ' + plural(sr.connected, 'more phone is', 'more phones are') + ' connected to a holder through Relay phones, but this packet’s ' + (p.route.policy === 'flood' ? 'hop or lifetime limit' : 'routing rule') + ' is not handing it to them (' + sr.heldBack + ' next to a holder that is not selecting them, ' + sr.notAdjacent + ' not next to any holder).' + (sr.cutOff ? ' ' + plural(sr.cutOff, 'more phone is', 'more phones are') + ' cut off by a gap.' : '') + waitNote(sr) + ' Connected does not mean it will be delivered.', tone: 'warn' };
     return { head: 'Stopped: nothing connected is left', body: have + '. The other Relay phones are cut off from every holder.', tone: 'warn' };
   }
   function sample(list, n) {   // one example of each reason first, then the rest
@@ -277,8 +279,8 @@
       if (policy === 'flood') lines = lines.concat(groupLine(fr.next, ' will pass it on')); else sample(fr.next, 5).forEach(function (m) { lines.push(mv(m)); });
     }
     var heldLines = [];
-    sample(fr.held, 3).forEach(function (m) { heldLines.push({ cls: 'held', main: X.who(m.from) + ' is not passing it to ' + X.who(m.to), sub: m.text }); });
-    if (fr.held.length > 3) heldLines.push({ cls: 'held', main: '…and ' + (fr.held.length - 3) + ' other held-back links', sub: '' });
+    sample(fr.held, 3).forEach(function (m) { heldLines.push({ cls: 'held', main: X.who(m.from) + ' is not selecting ' + X.who(m.to) + ' for the next step', sub: m.text }); });
+    if (fr.held.length > 3) heldLines.push({ cls: 'held', main: '…and ' + (fr.held.length - 3) + ' other links not selected now', sub: '' });
     lines = stt.canMove ? lines.concat(heldLines) : heldLines.concat(lines);      // when it has stopped, why it stopped comes first
     if (fr.stop) lines.unshift({ cls: 'stop', main: 'Stopped', sub: fr.stop.text });
     return lines;
@@ -348,7 +350,8 @@
       h('span', {}, h('i', { class: 'sw has' }), 'Have it', h('b', { id: 'r-held' }, String(g.holders.length))), h('span', {}, h('i', { class: 'sw reach' }), 'Connected, not received', h('b', { id: 'r-reach' }, String(g.reachable.length))),
       h('span', {}, h('i', { class: 'sw cut' }), 'Cut off from it', h('b', { id: 'r-cut' }, String(g.cutOff.length))), h('span', {}, h('i', { class: 'sw off' }), 'No Relay', h('b', { id: 'r-norelay' }, String(g.noRelay.length)))));
     if (rc.connected.length) m.appendChild(h('dl', { class: 'cmp', id: 'reach-detail', style: 'margin:6px 0 0' },
-      h('dt', {}, String(rc.eligibleNext.length)), h('dd', {}, 'will be handed it next step (eligible)'), h('dt', {}, String(rc.heldBack.length)), h('dd', {}, 'next to a holder, held back by the routing policy'),
+      h('dt', {}, String(rc.eligibleNext.length)), h('dd', {}, 'selected for the next step (eligible)'), h('dt', {}, String(rc.heldNow.length)), h('dd', {}, 'next to a holder, not selected now by the routing policy (can change)'),
+      h('dt', {}, String(rc.heldFixed.length)), h('dd', {}, 'next to a holder, blocked for this copy (its detour or target-area rule)'),
       h('dt', {}, String(rc.connectedOther.length)), h('dd', {}, rc.canMove ? 'connected, not next to a holder yet' : 'connected, but not next to any holder, and the packet has stopped')));
     m.appendChild(h('div', { class: 'muted small', style: 'margin:4px 0 0' }, '“Connected” means a chain of Relay phones links a phone to a holder. It is not receipt, and for a steered packet it is not a promise the packet will be sent there.'));
     m.appendChild(h('div', { class: 'row small', id: 'm-progress', style: 'margin-top:6px' }, h('span', {}, 'Have it (includes the sender)'), h('strong', {}, pct + '% of Relay phones')));
@@ -385,7 +388,7 @@
     var tb = h('table', { class: 'tbl', id: 'hood-table' }, h('tr', {}, ['Declared area', 'Steps to target', 'Relay phones', 'Hold it'].map(function (x) { return h('td', { class: 'muted small' }, x); })),
       hg.rows.slice().sort(function (a, b) { return (a.dist === null ? 9 : a.dist) - (b.dist === null ? 9 : b.dist) || (a.name < b.name ? -1 : 1); }).filter(function (r) { return r.relay || r.dist === 0; }).map(function (r) { return h('tr', {}, h('td', {}, r.name), h('td', {}, r.dist === null ? '–' : String(r.dist)), h('td', {}, String(r.relay)), h('td', {}, String(r.holders))); }));
     return h('div', { class: 'card hood', id: 'hoodcard' }, h('div', { class: 'eyebrow' }, 'Why it is steered this way'),
-      h('p', { class: 'small', style: 'margin:0 0 6px' }, 'Relay passes the request to a phone when its declared neighbourhood is no farther from ' + X.targetNames(p.route) + ' than the sender’s, or when both are within 1 step of it. A few detours are allowed so it cannot get stuck. Steps are hops in this small offline graph: not kilometres, and not GPS. Routing uses the area each phone declares, which can differ from the cluster it is drawn in; phones that declare the target area are ringed in violet.'),
+      h('p', { class: 'small', style: 'margin:0 0 6px' }, 'Relay passes the request to a phone when its declared neighbourhood is no farther from ' + X.targetNames(p.route) + ' than the sender’s, or when both are within 1 step of it. If a phone has a closer neighbour it hands the message to those first and does not send copies away from the target; a bounded detour is used only by a phone with nothing closer to hand it to, or after waiting. This graph says which declared areas count as closer. Only real phone-to-phone links carry messages, however near two areas are here. Steps are hops in this small offline graph: not kilometres, and not GPS. Routing uses the area each phone declares, which can differ from the cluster it is drawn in; phones that declare the target area are ringed in violet.'),
       svg, tb);
   }
   function priorityCard() {
@@ -447,7 +450,7 @@
     if (p) {
       var i = X.packetInfo(p.id), rt = p.route;
       side.appendChild(h('div', { class: 'card', id: 'msginspect' }, h('h2', {}, 'Selected message'), h('div', { class: 'small' }, h('b', {}, i.name), ' · ' + i.from),
-        h('dl', { class: 'cmp' }, [['Routing policy', rt.policy + (rt.targets && rt.targets.length ? ' → ' + X.targetNames(rt) : '')], ['Hop limit', String(rt.maxHops)], ['Fan-out limit', rt.fanout ? String(rt.fanout) : 'none'], ['Detours allowed', rt.policy === 'directed' ? String(rt.detourMax) + ' (+' + M.ROUTE.patientExtra + ' if stuck ' + M.ROUTE.patience + '+ min)' : 'n/a'], ['Link capacity', M.CAP + ' message per neighbour per step'], ['Lifetime', (p.expiresTick - p.createdTick) + ' simulated min, ' + i.expiresInMin + ' left'], ['Hand-offs so far', String(sumOut(p.id))]]
+        h('dl', { class: 'cmp' }, [['Routing policy', rt.policy + (rt.targets && rt.targets.length ? ' → ' + X.targetNames(rt) : '')], ['Hop limit', String(rt.maxHops)], ['Fan-out limit', rt.fanout ? rt.fanout + (rt.policy === 'directed' ? ' closer copies + ' + M.ROUTE.detourFanout + ' detour copies per phone' : ' copies per phone') : 'none'], ['Detours allowed', rt.policy === 'directed' ? String(rt.detourMax) + ' per copy (+' + M.ROUTE.patientExtra + ' once a phone has held it ' + M.ROUTE.patience + '+ min)' : 'n/a'], ['Link capacity', M.CAP + ' message per neighbour per step'], ['Lifetime', (p.expiresTick - p.createdTick) + ' simulated min, ' + i.expiresInMin + ' left'], ['Hand-offs so far', String(sumOut(p.id))]]
           .map(function (r) { return [h('dt', {}, r[0]), h('dd', {}, r[1])]; }).reduce(function (a, b) { return a.concat(b); }, []))));
     }
     var pickOpts = [h('option', { value: '' }, 'Choose a phone…')].concat(s.order.slice().sort(function (a, b) { var na = s.nodes[a], nb = s.nodes[b]; return (nb.key ? 1 : 0) - (na.key ? 1 : 0) || (na.zone < nb.zone ? -1 : na.zone > nb.zone ? 1 : 0) || (+a.slice(1)) - (+b.slice(1)); }).map(function (id) { var o = h('option', { value: id }, X.nm(id) + ' · ' + s.nodes[id].area + ' · ' + (M.canRelay(id) ? 'Relay' : 'no Relay')); if (id === st.sel) o.selected = true; return o; }));
@@ -462,7 +465,7 @@
       if (p) {
         var rows = X.neighbours(st.sel, p.id);
         dev.appendChild(h('div', { class: 'small', style: 'margin-top:8px;font-weight:700' }, 'Neighbours and this message'));
-        dev.appendChild(h('table', { class: 'tbl', id: 'nbrs' }, rows.map(function (r) { return h('tr', {}, h('td', { class: r.verdict === 'send' ? 'v-send' : r.verdict === 'detour' ? 'v-detour' : r.verdict === 'withhold' ? 'v-withhold' : r.verdict === 'stop' ? 'v-stop' : '' }, r.name), h('td', {}, h('b', {}, r.verdict === 'send' ? 'Will receive next step. ' : r.verdict === 'detour' ? 'Detour next step. ' : r.verdict === 'withhold' ? 'Held back. ' : r.verdict === 'stop' ? 'Not passed on. ' : ''), r.text)); })));
+        dev.appendChild(h('table', { class: 'tbl', id: 'nbrs' }, rows.map(function (r) { return h('tr', {}, h('td', { class: r.verdict === 'send' ? 'v-send' : r.verdict === 'detour' ? 'v-detour' : r.verdict === 'withhold' ? 'v-withhold' : r.verdict === 'stop' ? 'v-stop' : '' }, r.name), h('td', {}, h('b', {}, r.verdict === 'send' ? 'Selected for the next step. ' : r.verdict === 'detour' ? 'Detour selected for the next step. ' : r.verdict === 'stop' ? 'Not passed on. ' : ''), r.text, r.link ? h('small', { class: 'muted', style: 'display:block' }, r.link) : null)); })));
       }
       if (on) { var q = queue(st.sel); dev.appendChild(h('div', { class: 'small', style: 'margin-top:8px;font-weight:700' }, 'Waiting to forward (urgent first)'));
         dev.appendChild(q.length ? h('ul', { class: 'queue', id: 'queue' }, q.slice(0, 5).map(function (x) { return h('li', {}, h('span', {}, nameOf(x.p.id)), h('span', { class: 'muted' }, x.p.prio === 0 ? 'urgent' : x.p.prio === 2 ? 'update' : 'normal')); })) : h('div', { class: 'muted small' }, 'Nothing waiting.')); }
@@ -576,8 +579,8 @@
       if (e.target === document.body && e.key === ' ') { e.preventDefault(); if (st.playing) pause(); else if (!$('btn-play').disabled) play(null); }
     });
     var lg = $('legend'); lg.setAttribute('aria-label', 'Legend');
-    [['sw on', 'Relay phone'], ['sw has', 'Has the message'], ['sw reach', 'Connected, not received'], ['sw withheld', 'Held back by policy'], ['sw cut', 'Cut off from it'], ['sw off', 'No Relay'], ['sw front', 'Hands it on next'],
-      ['ln', 'Path it took'], ['ln hop', 'Moved this step'], ['ln next', 'Will move next'], ['ln held', 'Held back']].forEach(function (x) { lg.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
+    [['sw on', 'Relay phone'], ['sw has', 'Has the message'], ['sw reach', 'Connected, not received'], ['sw withheld', 'Not selected by routing policy'], ['sw cut', 'Cut off from it'], ['sw off', 'No Relay'], ['sw front', 'Hands it on next'],
+      ['ln', 'Path it took'], ['ln hop', 'Moved this step'], ['ln next', 'Will move next'], ['ln held', 'Not selected now']].forEach(function (x) { lg.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
     build(); attach(); fit(); paint();
   }
   function setScenario(k) { st.scen = k; var sel = $('scenario'); if (sel) sel.value = k; resetWorld(); }

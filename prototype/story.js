@@ -271,7 +271,7 @@
         out.sub = held <= 1 ? 'It’s only on the original phone so far.' : 'The ' + base + ' reached ' + plural(held - 1, 'other phone', 'other phones') + '.' + (sc === 'missing' ? ' Areas are declared by people, not GPS.' : '');
         out.metrics = [have]; out.primary = playBtn(); break;
       case 'decision':
-        out.head = 'Relay favors phones closer to the last-known area.'; out.sub = 'Next step: this phone has two neighbours. ' + (V.decision.b.det ? 'Both get it, one as a permitted detour.' : 'One gets the request. The other doesn’t.');
+        out.head = 'Relay favors phones closer to the last-known area.'; out.sub = 'Next step: this phone has two neighbours. ' + (V.decision.b.det ? 'Both get it, one as a permitted detour.' : 'One is chosen for the next step. The other isn’t, for now.');
         out.metrics = [have]; out.primary = { label: 'Continue', fn: actContinue }; break;
       case 'gap': {
         var gb = X.bridge(T.pid);
@@ -287,7 +287,7 @@
       case 'stopped': {
         var sr = m.why || X.stopReason(T.pid);
         out.head = 'The ' + base + ' has stopped spreading.';
-        out.sub = sr.code === 'policy' ? 'Its routing rule doesn’t send it to ' + plural(sr.connected, 'connected phone', 'connected phones') + '.' : sr.code === 'complete' ? 'It reached every phone it can.' : 'No Relay link leads to the phones still without it.';
+        out.sub = sr.code === 'policy' ? 'Its routing rule isn’t sending it to ' + plural(sr.connected, 'connected phone', 'connected phones') + (sr.waiting ? ' now. A later detour is possible.' : ' now.') : sr.code === 'complete' ? 'It reached every phone it can.' : 'No Relay link leads to the phones still without it.';
         out.metrics = [have]; out.done = true; break; }
       case 'expired': {
         var ep = s.packets[m.pid], noun = ep.type === 'reply' ? 'reply' : ep.type === 'ack' ? 'acknowledgment' : base;
@@ -400,8 +400,8 @@
         pop.setAttribute('data-node', b); ov.appendChild(pop); V.anchored.push({ el: pop, node: b, side: 'auto' }); }
       if (pops.indexOf('decision') >= 0) { var d = V.decision, ta = X.targetNames(S().packets[T.pid].route);
         var dp = h('div', { class: 'pop decision', id: 's-decision' }, h('b', {}, 'Next step: one phone, two neighbours'),
-          h('div', { class: 'cand a' }, h('strong', {}, 'A · ' + S().nodes[d.a.to].area + ' · gets it'), d.a.text),
-          h('div', { class: 'cand b' }, h('strong', {}, 'B · ' + S().nodes[d.b.to].area + (d.b.det ? ' · detour' : ' · held back')), d.b.text));
+          h('div', { class: 'cand a' }, h('strong', {}, 'A · ' + S().nodes[d.a.to].area + ' · chosen next'), (d.a.brief || d.a.text)),
+          h('div', { class: 'cand b' }, h('strong', {}, 'B · ' + S().nodes[d.b.to].area + (d.b.det ? ' · detour' : ' · not selected now')), (d.b.brief || d.b.text)));
         ov.appendChild(dp); V.anchored.push({ el: dp, node: d.src, side: 'auto', avoid: [d.a.to, d.b.to], strong: [d.src, d.a.to, d.b.to] }); }
       if (pops.indexOf('contest') >= 0) { var cc = firstContest(), s = S();
         if (cc) { var bx = h('div', { class: 'contest', id: 's-contest' }, h('b', {}, 'Link busy · one message per step'),
@@ -467,10 +467,10 @@
     if (pid) {
       var t = V.why[ka] || V.why[kb]; if (t) return t;
       var fr = X.frontier(pid), hit = fr.next.concat(fr.held).filter(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); })[0];
-      if (hit) return (fr.next.indexOf(hit) >= 0 ? 'Next: ' : 'Not passed on: ') + hit.text;
+      if (hit) return (fr.next.indexOf(hit) >= 0 ? 'Next: ' : 'Not selected now: ') + hit.text;
       if (s.inbox[a][pid] && s.inbox[b][pid]) return 'Both phones already have it.';
     }
-    return 'Both phones run Relay.';
+    return 'Both phones run Relay.' + (X.linkText(a, b) ? ' ' + X.linkText(a, b) : '');
   }
   function showTip(x, y, title, text) {
     var ov = $('s-overlay'), t = V.tip; if (!t) { t = V.tip = h('div', { class: 'tipbox', role: 'status' }); }

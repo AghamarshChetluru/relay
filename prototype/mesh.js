@@ -5,8 +5,9 @@
    Routing policy by message type (see route objects on packets):
      emergency / general assistance  -> 'flood'        broad multi-direction propagation, hop budget, urgent first
      missing person                  -> 'directed'     prefers phones whose DECLARED neighbourhood is closer to the target(s) in a
-                                                       small offline neighbourhood graph; same-area forwarding, bounded detours,
-                                                       per-phone fan-out budget. No target / unknown => 'opportunistic' (small hop budget)
+                                                       small offline neighbourhood graph; same-area forwarding, per-phone fan-out budget.
+                                                       Detours (bounded, fan-out limited) only from a phone with nothing closer to hand it to, or after it has
+                                                       waited `patience` minutes (see classify()). The encounter topology (who can meet) is separate from this. No target / unknown => 'opportunistic' (small hop budget)
      community broadcast             -> 'flood'        lowest priority, short lifetime, hop budget
    Replies, acknowledgments, resolution notices and sealed address shares flood (the requester's area may be stale or unknown). */
 (function (global) {
@@ -19,7 +20,15 @@
   var VALIDITY = { urgentOptions: [30, 60, 120], urgentDefault: 60, general: 360, missing: 1440 };   // minutes; product defaults, not medical standards
   var REMIND = 30, STALE = 60;  // location reminder after 30 min; declared area is not trusted for directional routing after 60 min
   var EVICT_GRACE = 30;         // expired packets stay visible (as expired) for 30 more minutes, then non-author caches drop them
-  var ROUTE = { floodHops: 60, broadcastHops: 30, directedHops: 40, directedFanout: 3, detourMax: 1, detourAway: 1, patience: 16, patientExtra: 2, oppHops: 10, oppFanout: 3 };
+  var ROUTE = { floodHops: 60, broadcastHops: 30, directedHops: 40, directedFanout: 3, detourMax: 1, detourAway: 1, detourFanout: 2, patience: 16, patientExtra: 2, oppHops: 10, oppFanout: 3 };
+  /* Encounter topology rules (who can exchange packets). The drawing is schematic, so these are RULES OF THE MODEL, not radio physics:
+       1. Phones inside one encounter cluster are in contact when their drawn distance is under ENCOUNTER.radius (drawing units).
+       2. A phone has at most ENCOUNTER.maxContacts simultaneous contacts; shorter contacts are chosen first (distance, then phone number).
+       3. Every cluster is kept connected by its minimum spanning tree, even if one of those links is longer than the radius (a marked 'stretched' link).
+       4. Clusters meet only through the few marked 'connector' links below (people who travel between areas). Nothing else crosses a cluster boundary.
+     Visual proximity across clusters never creates a contact: the nearest two phones in different clusters are more than ENCOUNTER.radius apart. */
+  var ENCOUNTER = { radius: 95, maxContacts: 5 };
+  var TOPO_SEED = 7;   // preferred layout; validated below (the search falls back to other seeds only if it ever stops satisfying the scenario constraints)
 
   /* Illustrative, coarse offline neighbourhood graph for south/central Delhi. NOT a survey: an edge means
      "neighbouring or directly linked by a main road". Only hop distance in this graph is used; no coordinates. */
@@ -30,6 +39,29 @@
   ];
   var NEIGH_EDGES = [['HK', 'GP'], ['HK', 'SE'], ['HK', 'BS'], ['HK', 'JS'], ['BS', 'JS'], ['BS', 'VV'], ['GP', 'SE'], ['GP', 'LN'],
     ['SE', 'LC'], ['SE', 'VV'], ['LC', 'CP'], ['LC', 'CK'], ['LC', 'LN'], ['CK', 'CP'], ['CK', 'VV']];
+  /* Basis of every edge above. Coarse, from general knowledge of south/central Delhi, NOT surveyed or checked against a map source, and the graph is NOT a
+     distance table: an edge only says "treat these two declared areas as one step apart". Hop counts in this graph decide which declared area is "closer" to a
+     target. They say nothing about whether two phones can meet: that is the separate encounter topology (S.adj). 'border' = the localities adjoin;
+     'road' = linked by a main road, not bordering; 'loose' = the weakest assumption (removing it does not change any delivery outcome in tests/sim_routing_test.js). */
+  var NEIGH_BASIS = {
+    'HK|GP': ['border', 'Green Park adjoins Hauz Khas to the north-east, along Aurobindo Marg.'],
+    'HK|SE': ['border', 'Safdarjung Enclave adjoins Hauz Khas to the north, across the Outer Ring Road.'],
+    'HK|BS': ['border', 'Ber Sarai adjoins Hauz Khas on its western side (near the IIT campus).'],
+    'HK|JS': ['border', 'Jia Sarai adjoins Hauz Khas on its western side (near the IIT campus).'],
+    'BS|JS': ['border', 'Ber Sarai and Jia Sarai are neighbouring villages.'],
+    'BS|VV': ['road', 'Linked by the Outer Ring Road through Munirka; the localities do not border.'],
+    'GP|SE': ['border', 'Green Park and Safdarjung Enclave sit on either side of Aurobindo Marg.'],
+    'GP|LN': ['road', 'Linked by the Ring Road through Defence Colony; the localities do not border.'],
+    'SE|LC': ['road', 'Linked by Aurobindo Marg and Lodhi Road past Safdarjung Airport.'],
+    'SE|VV': ['loose', 'Linked only loosely, by Outer Ring Road and Africa Avenue. The weakest edge.'],
+    'LC|CP': ['road', 'Linked by Lodhi Road and Janpath, several kilometres apart.'],
+    'LC|CK': ['road', 'Linked by Lodhi Road and Kautilya Marg.'],
+    'LC|LN': ['road', 'Linked by Lodhi Road and the Ring Road through Defence Colony; the localities do not border.'],
+    'CK|CP': ['road', 'Linked by Rajaji Marg and Janpath.'],
+    'CK|VV': ['border', 'Chanakyapuri and Vasant Vihar adjoin on the south-west side of the diplomatic enclave.']
+  };
+  /* Safdarjung Enclave and Lajpat Nagar are deliberately NOT adjacent here: they do not border, and the real links between them run through Green Park or
+     Lodhi Colony, which is exactly how this graph measures them (2 steps). */
   var NID = {}; NEIGH.forEach(function (n) { NID[n.id] = n; });
   var NDIST = (function () {
     var adj = {}, out = {}; NEIGH.forEach(function (n) { adj[n.id] = []; });
@@ -86,9 +118,9 @@
         nodes.push(n); return n;
       });
     });
-    function addEdge(a, b) {
+    function addEdge(a, b, kind) {
       if (a === b) return; var k = a.id < b.id ? a.id + '|' + b.id : b.id + '|' + a.id;
-      if (edgeSet[k]) return; edgeSet[k] = 1; edges.push({ from: a.id, to: b.id, enabled: true });
+      if (edgeSet[k]) return; edgeSet[k] = 1; edges.push({ from: a.id, to: b.id, enabled: true, kind: kind || 'connector' });
     }
     function pairs(A, B, k) {
       var all = [];
@@ -109,17 +141,21 @@
     var ccRest = byHood.CC.filter(function (p) { return p !== D; });
     var L = ccRest.length && byHood.LQ.slice().sort(function (p, q) { return dist(p, { x: 170, y: 515 }) - dist(q, { x: 170, y: 515 }); })[0];
     var C = ccRest.slice().sort(function (p, q) { return dist(p, { x: 500, y: 515 }) - dist(q, { x: 500, y: 515 }); })[0];
-    /* intra-neighbourhood links: MST (connected) + 2 nearest neighbours */
+    /* intra-cluster links (rules 1-3 above). Deterministic: sorted by distance, then by phone number. */
+    var skipped = [];
+    function numId(p) { return +p.id.slice(1); }
     HOODS.forEach(function (h) {
-      var P = byHood[h.id], all = [];
+      var P = byHood[h.id], all = [], deg = {}; P.forEach(function (p) { deg[p.id] = 0; });
       for (var i = 0; i < P.length; i++) for (var j = i + 1; j < P.length; j++) all.push([dist(P[i], P[j]), P[i], P[j]]);
-      all.sort(function (p, q) { return p[0] - q[0]; });
+      all.sort(function (p, q) { return p[0] - q[0] || numId(p[1]) - numId(q[1]) || numId(p[2]) - numId(q[2]); });
       var parent = {}; P.forEach(function (p) { parent[p.id] = p.id; });
       function find(x) { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; }
-      all.forEach(function (p) { var a = find(p[1].id), b = find(p[2].id); if (a !== b) { parent[a] = b; addEdge(p[1], p[2]); } });
-      P.forEach(function (p) {
-        P.filter(function (q) { return q !== p; }).sort(function (a, b) { return dist(p, a) - dist(p, b); })
-          .slice(0, 2).forEach(function (q) { if (dist(p, q) < 95) addEdge(p, q); });
+      all.forEach(function (p) { var a = find(p[1].id), b = find(p[2].id);
+        if (a !== b) { parent[a] = b; addEdge(p[1], p[2], p[0] < ENCOUNTER.radius ? 'local' : 'stretched'); deg[p[1].id]++; deg[p[2].id]++; } });
+      all.forEach(function (p) {
+        if (p[0] >= ENCOUNTER.radius) return; var k = p[1].id < p[2].id ? p[1].id + '|' + p[2].id : p[2].id + '|' + p[1].id; if (edgeSet[k]) return;
+        if (deg[p[1].id] < ENCOUNTER.maxContacts && deg[p[2].id] < ENCOUNTER.maxContacts) { addEdge(p[1], p[2], 'local'); deg[p[1].id]++; deg[p[2].id]++; }
+        else skipped.push({ a: p[1].id, b: p[2].id, d: p[0], why: 'contact-cap' });
       });
     });
     /* inter-neighbourhood links. NOTE: Market ↔ Clinic side is joined ONLY through the Crossroads phone D. */
@@ -130,7 +166,7 @@
     var m1 = pairs([D], byHood.MK, 1)[0][2], c1 = pairs([D], byHood.CD, 1)[0][2];
     addEdge(D, m1); addEdge(D, c1);
     var keys = { A: A, D: D, E: E, M: M, S: S, L: L, C: C };
-    return { nodes: nodes, edges: edges, keys: keys, m1: m1, c1: c1, r: r };
+    return { nodes: nodes, edges: edges, keys: keys, m1: m1, c1: c1, r: r, skipped: skipped };
   }
 
   function components(nodes, edges, on) {
@@ -149,8 +185,8 @@
   var TOPO;
   function topology() {
     if (TOPO) return TOPO;
-    for (var seed = 1; seed < 400; seed++) {
-      var t = build(seed), r = t.r, k = t.keys, protect = {};
+    for (var si = 0; si < 400; si++) {
+      var seed = si === 0 ? TOPO_SEED : si, t = build(seed), r = t.r, k = t.keys, protect = {};
       Object.keys(k).forEach(function (x) { protect[k[x].id] = 1; }); protect[t.m1.id] = protect[t.c1.id] = 1;
       var cand = t.nodes.filter(function (p) { return !protect[p.id]; });
       for (var i = cand.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)), tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp; }
@@ -197,7 +233,7 @@
     var dn = st.nodes[st.keys.D], cc = HP.CC; dn.px = cc.px + 26; dn.py = cc.py + cc.hd.h - 36;   // portrait layout helper (unused by the desktop simulator)
     st.hoodPos = {}; HOODS.forEach(function (hd) { st.hoodPos[hd.id] = { px: HP[hd.id].px, py: HP[hd.id].py }; });
     t.edges.forEach(function (e) {
-      st.edges.push({ from: e.from, to: e.to, enabled: true }); st.adj[e.from].push(e.to); st.adj[e.to].push(e.from);
+      st.edges.push({ from: e.from, to: e.to, enabled: true, kind: e.kind }); st.adj[e.from].push(e.to); st.adj[e.to].push(e.from);
     });
     return st;
   }
@@ -389,45 +425,86 @@
     if (p.type !== 'request') return false;
     return S.requests[p.requestId].versions.some(function (pid) { return S.packets[pid].version > p.version && nodeHas(nodeId, pid); });
   }
-  /* Who may src hand packet pid to right now? (shared by step() and stats().canMove so they never disagree) */
-  function plan(src, pid, hasFn) {
-    var p = S.packets[pid], e = S.inbox[src][pid];
-    if (!e || isExpired(p) || supersededAt(src, p)) return [];
-    var rt = p.route; if (e.hops >= rt.maxHops) return [];
-    var cands = S.adj[src].filter(function (d) { return canRelay(d) && !hasFn(d, pid); });
-    if (!cands.length) return [];
-    var ob = S.outbox[src][pid], sentGood = ob ? ob.good || 0 : 0, left = rt.fanout ? rt.fanout - sentGood : Infinity;
-    var out;
-    if (rt.policy === 'directed') {
-      var ds = distTo(src, rt.targets), good = [], detour = [];
-      var patient = !e.tgt && S.tick - e.tick >= ROUTE.patience, dmax = e.tgt ? 0 : rt.detourMax + (patient ? ROUTE.patientExtra : 0), away = rt.detourAway + (patient ? 1 : 0);
-      cands.forEach(function (d) {
-        var dd = distTo(d, rt.targets), inArea = dd !== null && dd <= 1 && ds !== null && ds <= 1;
-        if (dd !== null && ds !== null && (dd <= ds || inArea)) good.push({ d: d, s: dd, det: false });
-        else if (e.detours < dmax && (dd === null || ds === null || dd - ds <= away)) detour.push({ d: d, s: dd === null ? 99 : dd, det: true });
-      });
-      good.sort(function (a, b) { return a.s - b.s || (a.d < b.d ? -1 : 1); });
-      detour.sort(function (a, b) { return a.s - b.s || (a.d < b.d ? -1 : 1); });
-      var usable = left > 0 ? good.slice(0, left) : [];       // fan-out budget limits better-direction copies only ...
-      out = usable.length ? usable : detour;                   // ... so an exhausted budget can never trap a packet: detours take over
+  /* ---------- the forwarding decision (one function; step(), stats().canMove, Mesh.plan and the simulator's explanations all read it) ----------
+     Two separate layers decide a hand-off:
+       ENCOUNTER TOPOLOGY  which phones are in contact (S.adj) and run Relay. A packet can only ever move along those links.
+       ROUTING POLICY      which of those contacts a given packet may be handed to. For a missing-person request with a target area this uses the
+                           DECLARED neighbourhood of each phone (hop distance in the coarse neighbourhood graph), never the drawn position.
+     Directed policy, per holder src (ds = src's declared distance to the target, dd = a neighbour's; both must be known and fresh):
+       preferred   dd <= ds, or both within 1 step of the target ("same area").
+       FORWARD     if src has any preferred neighbour other than the phone it got the packet from, it hands copies to the preferred neighbours that lack it,
+                   closest first, at most `fanout` copies in total. It does NOT detour: sending a copy away from the target merely because the closer
+                   neighbours already have it only spreads the message outward.
+       DETOUR      (a) at once, when src has no preferred neighbour to forward to (a dead end for this packet), or (b) after `patience` minutes, when every
+                   preferred neighbour already has it and the packet has had no other way onward. At most `detourFanout` detour copies per phone, to
+                   neighbours at most `away` steps farther, while this copy's lineage has detours left; the allowance widens once the phone has waited
+                   `patience` minutes. A copy inside the target area never detours.
+     A phone that is not selected now is not necessarily excluded for good: classify() says which of the cases below applies. */
+  function numId(id) { return +String(id).slice(1); }
+  function classify(src, pid, hasFn, atTick) {
+    var now = atTick == null ? S.tick : atTick;
+    var p = S.packets[pid], e = S.inbox[src][pid], rt = p.route, o = { pid: pid, src: src, policy: rt.policy, rows: [], stop: null, mode: null, selected: [], retryAt: null };
+    if (!e) { o.stop = 'not-held'; return o; }
+    if (now >= p.expiresTick) { o.stop = 'expired'; return o; }
+    if (supersededAt(src, p)) { o.stop = 'superseded'; return o; }
+    if (e.hops >= rt.maxHops) { o.stop = 'hoplimit'; return o; }
+    var ob = S.outbox[src][pid], sent = ob ? ob.good || 0 : 0, left = rt.fanout ? Math.max(0, rt.fanout - sent) : Infinity;
+    var detSent = ob ? ob.dets || 0 : 0, leftDet = Math.max(0, ROUTE.detourFanout - detSent);
+    var nb = S.adj[src].filter(canRelay), rows = nb.map(function (d) { return { d: d, has: !!hasFn(d, pid), s: null, code: '', sel: false, det: false, pref: false }; });
+    o.rows = rows; o.left = left; o.sent = sent; o.fanout = rt.fanout || null; o.leftDet = leftDet; o.detSent = detSent; o.detourFanout = ROUTE.detourFanout;
+    var order = function (a, b) { return (a.s === null ? 99 : a.s) - (b.s === null ? 99 : b.s) || numId(a.d) - numId(b.d); };
+    if (rt.policy !== 'directed') {
+      o.mode = rt.policy;
+      var free = rows.filter(function (r) { return !r.has; });
+      if (rt.policy === 'opportunistic') free.forEach(function (r, k) { if (k < left) { r.sel = true; r.code = 'opportunistic'; } else r.code = 'fanout'; });
+      else free.forEach(function (r) { r.sel = true; r.code = 'flood'; });
     } else {
-      out = cands.map(function (d) { return { d: d, s: 0, det: false }; });
-      if (rt.policy === 'opportunistic') out = out.slice(0, Math.max(0, left));
+      var ds = distTo(src, rt.targets), patient = !e.tgt && now - e.tick >= ROUTE.patience;
+      var dmax = e.tgt ? 0 : rt.detourMax + (patient ? ROUTE.patientExtra : 0), away = rt.detourAway + (patient ? 1 : 0);
+      o.ds = ds; o.patient = patient; o.dmax = dmax; o.away = away; o.used = e.detours; o.inTarget = !!e.tgt; o.heldSince = e.tick; o.patience = ROUTE.patience;
+      rows.forEach(function (r) { r.s = distTo(r.d, rt.targets); r.pref = r.s !== null && ds !== null && (r.s <= ds || (r.s <= 1 && ds <= 1)); });
+      var fwd = rows.filter(function (r) { return r.pref && r.d !== e.via; }), unserved = fwd.filter(function (r) { return !r.has; }).sort(order);
+      o.forward = fwd.length; o.forwardHolding = fwd.length - unserved.length;
+      var elig = [], mayWiden = !e.tgt && !patient;
+      function detourRows(allow) {   // allow: detours permitted now (otherwise every farther neighbour is "not selected yet")
+        rows.forEach(function (r) {
+          if (r.has || r.pref) return;
+          if (e.tgt) r.code = 'inside-target';
+          else if (!allow) { r.code = 'closer-exists'; if (mayWiden && e.detours < dmax + ROUTE.patientExtra && (r.s === null || ds === null || r.s - ds <= away + 1)) o.retryAt = e.tick + ROUTE.patience; }
+          else if (e.detours >= dmax) { r.code = 'detour-used'; if (mayWiden) o.retryAt = e.tick + ROUTE.patience; }
+          else if (r.s !== null && ds !== null && r.s - ds > away) { r.code = 'too-far'; if (mayWiden) o.retryAt = e.tick + ROUTE.patience; }
+          else elig.push(r);
+        });
+        elig.sort(order).forEach(function (r, k) { if (k < leftDet) { r.sel = true; r.det = true; r.code = 'detour'; } else r.code = 'detour-fanout'; });
+      }
+      if (unserved.length) {
+        o.mode = 'forward';
+        unserved.forEach(function (r, k) { if (k < left) { r.sel = true; r.code = r.s < ds ? 'closer' : (r.s === ds ? 'equal' : 'same-area'); } else r.code = 'fanout'; });
+        rows.forEach(function (r) { if (!r.has && !r.pref) { r.code = 'closer-exists'; if (mayWiden && e.detours < dmax + ROUTE.patientExtra && (r.s === null || ds === null || r.s - ds <= away + 1)) o.retryAt = e.tick + ROUTE.patience; } });
+      } else if (!fwd.length) { o.mode = 'detour'; detourRows(true); }          // dead end: nothing closer to hand it to
+      else { o.mode = patient ? 'waited' : 'covered'; detourRows(patient); }     // every closer neighbour already has it: wait, then (and only then) a bounded detour
     }
-    return out;
+    rows.sort(function (a, b) { return (b.sel - a.sel) || order(a, b); });
+    o.selected = rows.filter(function (r) { return r.sel; }).map(function (r) { return { d: r.d, s: r.s === null ? (r.det ? 99 : 0) : r.s, det: r.det }; });
+    return o;
   }
+  /* Who may src hand packet pid to right now? (shared by step() and stats().canMove so they never disagree) */
+  function plan(src, pid, hasFn) { return classify(src, pid, hasFn).selected; }
   function step() {
-    var snap = {}, next = S.tick + 1, moved = [], slots = {};
-    S.order.forEach(function (id) { snap[id] = Object.keys(S.inbox[id]); });
-    S.order.forEach(function (src) {
+    /* Every phone decides from what the network looked like at the START of the minute (simultaneous decisions), so the outcome does not depend on the order
+       phones are processed in. If two phones hand the same message to the same neighbour in the same minute, the lower-numbered sender is the one it
+       records (a fixed, documented tie-break); the other copy was not needed and is not counted against that phone's copy limit. */
+    var snap = {}, had = {}, next = S.tick + 1, moved = [], slots = {};
+    S.order.forEach(function (id) { snap[id] = Object.keys(S.inbox[id]); had[id] = {}; snap[id].forEach(function (x) { had[id][x] = true; }); });
+    S.order.slice().sort(function (a, b) { return numId(a) - numId(b); }).forEach(function (src) {
       if (!canRelay(src)) return;
       snap[src].slice().sort(prio).forEach(function (pid) {
-        plan(src, pid, function (d, x) { return !!S.inbox[d][x]; }).forEach(function (c) {
+        plan(src, pid, function (d, x) { return !!had[d][x]; }).forEach(function (c) {
           var k = src + '>' + c.d; if ((slots[k] || 0) >= CAP || S.inbox[c.d][pid]) return;
           var e = S.inbox[src][pid], p0 = S.packets[pid];
           S.inbox[c.d][pid] = { tick: next, via: src, hops: e.hops + 1, detours: e.detours + (c.det ? 1 : 0), tgt: !!e.tgt || (p0.route.targets && distTo(c.d, p0.route.targets) === 0) };
           slots[k] = (slots[k] || 0) + 1;
-          var ob = S.outbox[src][pid]; if (!ob) ob = S.outbox[src][pid] = { tick: next, to: c.d, count: 0, good: 0 }; ob.count++; if (!c.det) ob.good = (ob.good || 0) + 1;
+          var ob = S.outbox[src][pid]; if (!ob) ob = S.outbox[src][pid] = { tick: next, to: c.d, count: 0, good: 0 }; ob.count++; if (!c.det) ob.good = (ob.good || 0) + 1; else ob.dets = (ob.dets || 0) + 1;
           moved.push({ from: src, to: c.d, packetId: pid });
         });
       });
@@ -542,7 +619,12 @@
   function stats(pid) {
     var p = S.packets[pid], on = {}, hs = holders(pid), expired = isExpired(p), hoods = {};
     S.order.forEach(function (id) { on[id] = canRelay(id); });
-    var canMove = !expired && hs.some(function (src) { return on[src] && plan(src, pid, function (d, x) { return nodeHas(d, x); }).length > 0; });
+    var hf = function (d, x) { return nodeHas(d, x); };
+    var canMove = !expired && hs.some(function (src) { return on[src] && plan(src, pid, hf).length > 0; });
+    /* waiting: nothing can be handed on this minute, but a time-based allowance (the patience rule) will let a holder detour later, if nothing else changes */
+    var wakeTick = null;
+    if (!canMove && !expired) hs.forEach(function (src) { if (!on[src]) return; var c0 = classify(src, pid, hf); if (c0.retryAt == null) return;
+      if (classify(src, pid, hf, c0.retryAt).selected.length && (wakeTick === null || c0.retryAt < wakeTick)) wakeTick = c0.retryAt; });
     var comp = components(S.order.map(function (id) { return { id: id }; }), S.edges, on), hc = {};
     hs.forEach(function (id) { if (on[id]) hc[comp[id]] = 1; });
     var csize = {}; S.order.forEach(function (id) { if (on[id]) csize[comp[id]] = (csize[comp[id]] || 0) + 1; });
@@ -558,7 +640,7 @@
     S.order.forEach(function (id) { if (on[id]) { var h = hoods[S.nodes[id].zone]; h.total++; if (nodeHas(id, pid)) h.held++; } });
     var part = participating().length, held = hs.filter(function (id) { return on[id]; }).length;
     var unreached = part - held;
-    return { holders: hs, held: held, participating: part, expired: expired, canMove: canMove, policy: p.route.policy,
+    return { holders: hs, held: held, participating: part, expired: expired, canMove: canMove, waiting: wakeTick !== null, wakeTick: wakeTick, policy: p.route.policy,
       blocked: !canMove && !expired && unreached > 0, complete: !canMove && !expired && unreached === 0,
       candidates: candidates, unlock: unlock, hoods: hoods };
   }
@@ -578,7 +660,7 @@
   }
 
   global.Mesh = { WORLD: { land: { w: 1000, h: 700 }, port: { w: 656, h: 950 } }, TTL: TTL, CAP: CAP, MAX_BROADCAST: MAX_BROADCAST, VALIDITY: VALIDITY, ROUTE: ROUTE,
-    REMIND: REMIND, STALE: STALE, EVICT_GRACE: EVICT_GRACE, HOODS: HOODS, NEIGHBORHOODS: NEIGH, NEIGH_EDGES: NEIGH_EDGES, hoodDistance: hdist,
+    REMIND: REMIND, STALE: STALE, EVICT_GRACE: EVICT_GRACE, HOODS: HOODS, NEIGHBORHOODS: NEIGH, NEIGH_EDGES: NEIGH_EDGES, NEIGH_BASIS: NEIGH_BASIS, hoodDistance: hdist,
     reset: reset, state: state, name: name, canRelay: canRelay, nodeHas: nodeHas, holders: holders, isExpired: isExpired, topology: topology,
     setHood: setHood, confirmHood: confirmHood, hoodState: hoodState, nearby: nearby,
     createRequest: createRequest, createBroadcast: createBroadcast, createReply: createReply, createAck: createAck, createResolve: createResolve,
@@ -590,6 +672,9 @@
     components: function (on) { return components(S.order.map(function (id) { return { id: id }; }), S.edges, on); },
     /* Read-only view of the engine's own forwarding decision (the exact function step() calls): who src would hand pid to next step. Added for the
        simulator's explanations; it does not change routing. Returns [{ d: neighbour, s: distance-to-target or 0, det: true when it is a detour }]. */
-    plan: function (src, pid) { return plan(src, pid, function (d, x) { return nodeHas(d, x); }); } };
+    plan: function (src, pid) { return plan(src, pid, function (d, x) { return nodeHas(d, x); }); },
+    /* Read-only: the full classification behind plan() (every Relay neighbour of src, with the engine's own reason code). For the simulator's explanations. */
+    classify: function (src, pid) { return classify(src, pid, function (d, x) { return nodeHas(d, x); }); },
+    ENCOUNTER: ENCOUNTER, TOPO_SEED: TOPO_SEED };
   reset();
 })(window);

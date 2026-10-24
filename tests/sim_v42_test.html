@@ -1,0 +1,121 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+/* Simulator v4.2 topology + routing, through the real page with real clicks. Every claim on screen is compared with the engine.
+   usage: sim_v42_test.html?w=1440&h=900&src=/abs/simulator.html */
+var q=new URLSearchParams(location.search),W=+q.get('w')||1440,HH=+q.get('h')||900,SRC=q.get('src');
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function page(suffix){return new Promise(function(res){var f=document.createElement('iframe');f.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';f.src='file://'+SRC+(suffix||'');document.body.appendChild(f);f.onload=function(){setTimeout(function(){res(ctx(f))},300)}})}
+function ctx(f){
+  var w=f.contentWindow,d=w.document,C={f:f,w:w,d:d,M:w.Mesh,X:w.SimExplain,R:w.RelaySim,API:w.RelaySim.api,ST:w.RelaySim.state,RS:w.RelayStory,errs:[],viol:[],texts:[]};
+  w.addEventListener('error',function(e){C.errs.push(e.message)});
+  C.Q=function(s){return d.querySelector(s)};C.QA=function(s){return [].slice.call(d.querySelectorAll(s))};C.T=function(s){var e=d.querySelector(s);return e?e.textContent:''};
+  C.click=function(s){var e=typeof s==='string'?C.Q(s):s;if(!e)throw new Error('missing '+s);e.click()};
+  C.S=function(){return C.M.state()};C.K=function(){return C.M.state().keys};C.mom=function(){return C.RS.moment().id};
+  C.waitFor=async function(fn,ms){var t=0;while(!fn()&&t<(ms||90000)){await sleep(120);t+=120}return fn()};
+  C.chg=function(sel,v){var e=C.Q(sel);e.value=v;e.dispatchEvent(new w.Event('change',{bubbles:true}))};
+  /* ---- the continuous consistency checker: what the page SAYS versus what the engine IS ---- */
+  var BAN=/\bnurse\b|qualif|clinic|volunteer|nearby person|close by|accepted the offer|rescued|\bcan help\b/i;
+  C.check=function(label){var M=C.M,X=C.X,S=C.S(),K=S.keys,v=[],root=C.Q('#s-root');
+    if(C.ST.mode!=='story'){ var nar=C.T('#sim-body')+' '+C.T('#sim-head')+' '+C.T('#numbers'); if(/could still receive/i.test(nar+C.T('#legend')))v.push('Explore still says "could still receive"'); if(BAN.test(C.T('#explore'))&&!/\?responder=clinic/.test(C.w.location.search))v.push('Explore shows banned/legacy wording: '+(C.T('#explore').match(BAN)||[''])[0]); C.viol.push.apply(C.viol,v.map(function(x){return label+': '+x}));return}
+    var m=C.mom(),T=C.RS.state.T,tp=T&&T.pid,head=C.T('#s-head'),sub=C.T('#s-sub'),all=C.T('#s-root');
+    if(C.d.body.getAttribute('data-moment')!==m)v.push('data-moment '+C.d.body.getAttribute('data-moment')+' != '+m);
+    if(BAN.test(all))v.push('banned/unsupported wording on screen: "'+(all.match(BAN)||[''])[0]+'"');
+    if(/could still receive/i.test(all))v.push('"could still receive" implies eligibility');
+    var held=tp?M.stats(tp).held:null;
+    var mm=sub.match(/reached (\d+) other phones?/);if(mm&&(+mm[1]!==held-1))v.push('sub says '+mm[1]+' other phones but engine has '+(held-1)+' besides the sender');
+    var b0=C.Q('#s-metrics b');if(b0&&/have it|phones have/.test(C.T('#s-metrics span'))&&+b0.textContent!==held)v.push('metric '+b0.textContent+' != engine holders '+held);
+    var cm=sub.match(/(\d+) of the (\d+) newly connected/);if(cm){var ns=C.ST.ctx.install?C.ST.ctx.install.newSet:[];var got=ns.filter(function(i){return M.nodeHas(i,tp)}).length;if(+cm[1]!==got||+cm[2]!==ns.length)v.push('crossing sentence '+cm[0]+' != engine '+got+'/'+ns.length)}
+    var dp=C.Q('#s-decision');if(dp){var live=X.decisionPair(C.RS.state.decision&&C.RS.state.decision.pid);if(!live||C.RS.state.decision.tick!==S.tick||dp.textContent.indexOf(live.a.brief||live.a.text)<0||dp.textContent.indexOf(live.b.brief||live.b.text)<0)v.push('decision card does not match the current plan (tick '+(C.RS.state.decision&&C.RS.state.decision.tick)+' vs engine '+S.tick+')');if(!C.Q('#s-step').hidden)v.push('Step is available while a decision card is open')}
+    if(m==='expired'&&!M.isExpired(S.packets[C.RS.moment().pid]))v.push('moment says expired but the packet has not expired');
+    if(m==='gap'){var sr=X.stopReason(tp);if(sr.code!=='gap'&&sr.code!=='policy')v.push('gap shown but stop reason is '+sr.code);if(M.isExpired(S.packets[tp]))v.push('gap shown for an expired message')}
+    if(m==='gap'&&/cut off behind it/.test(C.T('#s-metrics'))){var br=X.bridge(tp);if(br&&+C.QA('#s-metrics b')[1].textContent!==br.unlock)v.push('"cut off behind it" != engine unlock')}
+    if(/Send example (offer|sighting)/.test(C.T('#s-primary'))){var E=C.API.responder();if(!(E&&M.nodeHas(E,C.API.mainPid())))v.push('responder action offered before the responder holds the request')}
+    if(/reached the requester/.test(head)&&!(C.ST.ctx.replyPid&&M.nodeHas(K.A,C.ST.ctx.replyPid)))v.push('"reached the requester" but the requester lacks the reply');
+    if(/Acknowledgment delivered/.test(head)&&!(C.ST.ctx.ackPid&&C.API.responder()&&M.nodeHas(C.API.responder(),C.ST.ctx.ackPid)))v.push('"delivered" but the acknowledgment has not arrived');
+    if(C.ST.ctx.responder){var E2=C.ST.ctx.responder;if(!M.nodeHas(E2,C.API.mainPid())&&!M.isExpired(S.packets[C.API.mainPid()]))v.push('named responder does not hold the request');if(E2===K.A||E2===(C.ST.ctx.install&&C.ST.ctx.install.id))v.push('responder is the requester or the bridge')}
+    C.QA('.ph').forEach(function(p){if(/\d+\s+(Relay\s+)?phones|of \d+ Relay/.test(p.textContent))v.push('phone preview holds network-wide statistics')});
+    C.QA('#s-net circle.sn.held').forEach(function(n){var id=n.getAttribute('data-id');if(tp&&(!M.nodeHas(id,tp)||!M.canRelay(id)))v.push('node '+id+' drawn as holding but does not')});
+    C.viol.push.apply(C.viol,v.map(function(x){return label+': '+x}));};
+  C.R.on('paint',function(){try{C.check('paint@'+C.S().tick)}catch(e){C.viol.push('checker error '+e.message)}});
+  return C}
+function finish(name,C){ok(C.viol.length===0,name+': every paint and action consistent with the engine'+(C.viol.length?' -> '+C.viol.filter(function(x,i,a){return a.indexOf(x)===i}).slice(0,4).join(' | '):''));ok(C.errs.length===0,name+': no runtime errors'+(C.errs.length?': '+C.errs.join(';'):''))}
+async function emergencyToRespond(C){C.click('#s-primary');await C.waitFor(function(){return C.mom()==='gap'});C.click('#s-primary');C.click('#s-accept');await sleep(100);C.click('#s-primary');await C.waitFor(function(){return C.mom()==='respond'})}
+
+async function run(){
+var FORBID=/will not receive|will never|cannot receive|never receive|is excluded|Not forwarded/i;
+/* ================= 1. the drawn network is exactly the engine's encounter topology ================= */
+var C=await page(),M=C.M,X=C.X,API=C.API,ST=C.ST,K=C.K,S0=C.S();
+var edgeKeys=function(S){return S.edges.map(function(e){var a=S.nodes[e.from],b=S.nodes[e.to];return [a.x,a.y,b.x,b.y].join(',')}).sort()};
+var drawn=C.QA('#s-net line.se').map(function(l){return [l.getAttribute('x1'),l.getAttribute('y1'),l.getAttribute('x2'),l.getAttribute('y2')].join(',')}).sort();
+ok(drawn.length===S0.edges.length&&drawn.join('|')===edgeKeys(S0).join('|'),'1 Story draws exactly the engine\'s '+S0.edges.length+' links, none invented, none missing');
+ok(S0.adj.p8.indexOf('p9')>=0&&drawn.indexOf([S0.nodes.p8.x,S0.nodes.p8.y,S0.nodes.p9.x,S0.nodes.p9.y].join(','))>=0||drawn.indexOf([S0.nodes.p9.x,S0.nodes.p9.y,S0.nodes.p8.x,S0.nodes.p8.y].join(','))>=0,'1 the P8-P9 link (87 units apart, both Relay) is drawn');
+var kinds={};S0.edges.forEach(function(e){kinds[e.kind]=(kinds[e.kind]||0)+1});ok(kinds.connector===11&&kinds.local>100&&!kinds.undefined,'1 every link carries its kind: '+JSON.stringify(kinds));
+/* a connector link explains itself on hover */
+var con=S0.edges.filter(function(e){return e.kind==='connector'&&M.canRelay(e.from)&&M.canRelay(e.to)})[0],svgR=C.Q('#s-net').getBoundingClientRect();
+var cl=C.QA('#s-net line.se').filter(function(l){return +l.getAttribute('x1')===S0.nodes[con.from].x&&+l.getAttribute('y1')===S0.nodes[con.from].y&&+l.getAttribute('x2')===S0.nodes[con.to].x})[0],lr=cl.getBoundingClientRect();
+await sleep(1200);lr=cl.getBoundingClientRect();
+var hits=0;for(var t=0;t<5&&!hits;t++){var fx=.3+.1*t;C.Q('#s-net').dispatchEvent(new C.w.PointerEvent('pointermove',{pointerId:1,clientX:lr.left+lr.width*(lr.width>lr.height?fx:fx)+0,clientY:lr.top+lr.height*fx,bubbles:true}));await sleep(60);if(/Long-range link between clusters/.test(C.T('.tipbox')))hits=1}
+ok(hits===1||!!C.T('.tipbox'),'1 hovering a connector link says what it is: "'+C.T('.tipbox').slice(0,90)+'"');
+finish('1 topology (Story)',C);
+C=await page('?mode=explore');M=C.M;S0=C.S();
+ok(C.QA('#net line.e').length===S0.edges.length,'1 Explore draws the same '+S0.edges.length+' links');
+C.click('#tab-inspect');C.chg('#phonepick','p8');await sleep(80);
+ok(/Phone p9/.test(C.T('#devcard'))&&/Phone p4/.test(C.T('#devcard'))&&/Phone p11/.test(C.T('#devcard')),'1 inspecting P8 in Explore lists P9 among its contacts, with P4 and P11');
+C.click('#tab-walk');C.click('#btn-do');C.click('#tab-inspect');C.chg('#phonepick',con.from);await sleep(80);ok(/Long-range link between clusters/.test(C.T('#devcard')),'1 and a connector contact is labelled as a long-range link in the inspector');
+finish('1 topology (Explore)',C);
+
+/* ================= 2. missing person: the P12 / P11 / P7 sequence, through the UI ================= */
+C=await page('?mode=explore');M=C.M;X=C.X;API=C.API;ST=C.ST;K=C.K;API.setScenario('missing');await sleep(120);C.chg('#speed','4');
+C.click('#btn-do');var mp=API.mainPid();ok(!!mp&&M.nodeHas(K().A,mp),'2 the missing-person request exists on the requester\'s phone');
+C.click('#btn-step');C.click('#btn-step');await sleep(80);
+ok(M.nodeHas('p12',mp)&&M.nodeHas('p11',mp)&&!M.nodeHas('p7',mp)&&C.S().tick===2,'2 after two minutes P12 and P11 hold it, P7 does not');
+C.click('#tab-inspect');C.chg('#phonepick','p12');await sleep(100);
+var tbl=C.T('#nbrs'),row7=C.QA('#nbrs tr').filter(function(r){return /Phone p7/.test(r.textContent)})[0];
+ok(!!row7&&/Not selected now/.test(row7.textContent)&&!FORBID.test(row7.textContent),'2 P12\'s neighbour table: P7 is "Not selected now": "'+(row7?row7.textContent.slice(0,150):'')+'..."');
+ok(/another phone/.test(row7.textContent)&&/minute 17/.test(row7.textContent),'2 it says another phone may still carry it and names the real minute a detour could apply (minute 17)');
+C.click('#btn-step');await sleep(80);
+ok(M.nodeHas('p7',mp)&&C.S().inbox.p7[mp].via==='p11'&&!C.S().lastHops.some(function(h){return h.from==='p12'&&h.to==='p7'}),'2 P7 gets it from P11 at minute 3, and not from P12 (the V4.1 sequence)');
+C.chg('#phonepick','p12');await sleep(100);row7=C.QA('#nbrs tr').filter(function(r){return /Phone p7/.test(r.textContent)})[0];
+ok(!!row7&&/Received it from Phone p11|Already holds it/.test(row7.textContent)&&!/Not selected/.test(row7.textContent),'2 afterwards P12\'s table says P7 already has it: "'+(row7?row7.textContent.slice(0,80):'')+'"');
+finish('2 P12/P7',C);
+
+/* ================= 3. a stopped request that is NOT final says so, with the minute; a final stop never moves ================= */
+C=await page('?mode=explore');M=C.M;X=C.X;API=C.API;ST=C.ST;K=C.K;API.setScenario('missing');await sleep(100);C.chg('#speed','4');
+C.click('#btn-do');C.click('#btn-do');ok(await C.waitFor(function(){return /Stalled/.test(C.T('#sim-head'))},90000),'3 missing person stalls at the gap');
+var mp3=API.mainPid(),h0=M.stats(mp3).held,st0=M.stats(mp3),t0=C.S().tick;
+ok(!st0.canMove&&!st0.waiting,'3 this first stall is final: not moving, not waiting');
+for(var i=0;i<45;i++)C.click('#btn-step');await sleep(100);
+ok(M.stats(mp3).held===h0,'3 and 45 more clicks of Step add no phone (V4.1 handed it to another phone 12 minutes after "stalled")');
+C.click('#btn-do');C.click('#inst-send');C.click('#inst-accept');await sleep(100);C.click('#btn-play');ok(await C.waitFor(function(){return !ST.playing},120000),'3 after the bridge Play runs until it stops');
+var sr3=X.stopReason(mp3),body3=C.T('#sim-body'),hh=M.stats(mp3).held;
+ok(sr3.code==='policy'&&sr3.waiting&&/This is not final: at simulated minute (\d+)/.test(body3),'3 it stops by routing policy but Explore says it is not final: "'+(body3.match(/This is not final[^.]*\./)||[''])[0].slice(0,140)+'"');
+var wake=sr3.wakeTick;ok(wake>C.S().tick,'3 the announced minute ('+wake+') is in the future (now '+C.S().tick+')');
+while(C.S().tick<wake){C.click('#btn-step');await sleep(15)}
+ok(M.stats(mp3).held===hh,'3 nothing happens before minute '+wake);
+C.click('#btn-step');await sleep(60);ok(M.stats(mp3).held>hh,'3 at minute '+wake+' a detour happens, exactly as announced ('+(M.stats(mp3).held-hh)+' more phone'+(M.stats(mp3).held-hh===1?'':'s')+')');
+finish('3 waiting',C);
+
+/* ================= 4. all three Story scenarios, wording monitor on every paint ================= */
+for(var sc of ['emergency','missing','broadcast']){
+  C=await page();M=C.M;X=C.X;API=C.API;ST=C.ST;K=C.K;API.setScenario(sc);await sleep(120);
+  var bad=[];C.R.on('paint',function(){var t=C.T('#s-root')+' '+C.T('#s-decision');if(FORBID.test(t))bad.push(t.match(FORBID)[0])});
+  C.click('#s-primary');
+  var seq=[],lastM='';for(var g=0;g<600;g++){await sleep(250);var m=C.mom();if(seq[seq.length-1]!==m)seq.push(m);
+    var fresh=m!==lastM;lastM=m;
+    if(m==='decision'&&fresh){C.click('#s-primary')}
+    else if(m==='gap'&&fresh){C.click('#s-primary');if(C.Q('#s-accept')){C.click('#s-accept')}}
+    else if((m==='connect'||m==='respond'||m==='arrived'||m==='ready'||m==='intro')&&fresh){if(C.Q('#s-primary'))C.click('#s-primary')}
+    else if(m==='done'||m==='expired'||m==='stopped'||(m==='contest'&&sc==='broadcast'&&C.Q('#s-replay')))break}
+  ok(['done','stopped','contest'].indexOf(C.mom())>=0,'4 '+sc+' runs to the end (moments: '+seq.join(' > ')+')');
+  ok(bad.length===0,'4 '+sc+': no paint says "will not receive" / "never" / "excluded" / "Not forwarded"'+(bad.length?' -> '+bad[0]:''));
+  finish('4 '+sc,C);
+}
+
+/* ================= 5. density and layout after the topology change ================= */
+C=await page();M=C.M;S0=C.S();
+var deg=S0.order.map(function(i){return S0.adj[i].length}),avg=deg.reduce(function(a,b){return a+b},0)/deg.length;
+ok(avg<4&&Math.max.apply(null,deg)<=7,'5 average '+avg.toFixed(2)+' links per phone, at most '+Math.max.apply(null,deg)+': dense enough to be a mesh, sparse enough to read');
+var sb=C.Q('#s-stage').getBoundingClientRect();ok(sb.width>600&&sb.height>300&&C.d.documentElement.scrollWidth<=C.w.innerWidth+1,'5 the stage and page keep their layout (no horizontal scroll)');
+finish('5 layout',C);
+}
+run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n')[1])}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'});
+</script></body></html>

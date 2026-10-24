@@ -1,5 +1,7 @@
 # Simulator V4.1: logic, semantics and interaction audit
 
+> V4.2 (`docs/SIMULATOR_V42_ROUTING_AUDIT.md`) later changed the encounter topology and the directed-forwarding fallback, so some counts quoted below (for example 52 / 11 / 3 / 8) describe the V4.1 topology.
+
 Branch `feature/simulator-v4-logic-fixes`, from `feature/simulator-v4` at `64da7a4`. No redesign: the light interface, navy stage, camera, previews and Story/Explore split are unchanged. This document records what was wrong, why, how it was fixed, and which test now catches it.
 
 ## Method
