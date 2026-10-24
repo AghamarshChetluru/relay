@@ -2,7 +2,7 @@
 
 Entry point (works offline, no server): `prototype/simulator.html` (open with `file://`).
 Explore mode directly: `prototype/simulator.html?mode=explore`.
-> **Superseded in part by V4.1** (`docs/SIMULATOR_V4_LOGIC_AUDIT.md`, branch `feature/simulator-v4-logic-fixes`): several statements below (the scripted nurse reply, "newly reachable" counts, the zone-as-neighbourhood drawing, "accepted") were corrected there.
+> **Superseded in part by V4.1** (`docs/SIMULATOR_V4_LOGIC_AUDIT.md`, branch `feature/simulator-v4-logic-fixes`): several statements below (the scripted nurse reply, "newly reachable" counts, the zone-as-neighbourhood drawing, "accepted") were corrected there. The missing-person "one phone, two neighbours" decision screen in section 3 was later removed (`docs/SIMULATOR_V4_MISSING_STORY.md`).
 
 Branch `feature/simulator-v4`, built from `feature/simulator-v3` at `70a170d`. Not merged to `main`. The Android app and its branch are untouched.
 

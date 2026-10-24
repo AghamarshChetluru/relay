@@ -96,11 +96,12 @@ section('D invariant', () => { /* invariant over every step of both flows: eligi
   ok(viol === 0, 'eligible-next equals the engine plan, canMove iff something is eligible, and the five groups always partition 80 phones (' + steps + ' steps)'); });
 
 /* ================= E. a forwarding decision is a statement about ONE tick ================= */
-section('E decision', () => { M.reset(); const r = MP(), pid = r.packetId; M.step(); const d1 = X.decisionPair(pid); ok(d1 && d1.tick === S().tick && d1.pid === pid, 'a decision carries the tick it describes (' + (d1 && d1.tick) + ')');
-  ok(X.decide(d1.src, d1.b.to, pid).verdict === 'withhold' || d1.b.det, 'at that tick, B really is not selected (or a detour)');
-  M.step(); const d2 = X.decisionPair(pid);
-  ok(!d2 || d2.tick !== d1.tick, 'after one more step a fresh decision (or none) is computed for the new tick, never the old object');
-  const heldBefore = d1.b.det ? null : d1.b.to; ok(heldBefore === null || X.decide(d1.src, heldBefore, pid).verdict !== 'withhold' || M.nodeHas(heldBefore, pid) || d2 === null || d2.b.to !== heldBefore || true, 'recomputation, not caching, is what keeps explanations true');
+section('E decision', () => { M.reset(); const r = MP(), pid = r.packetId; M.step();
+  /* every forwarding verdict is computed from the engine at the moment it is asked, and says which kind of verdict it is */
+  const f1 = X.frontier(pid); ok(f1.next.length > 0 && f1.next.every(e => M.plan(e.from, pid).some(c => c.d === e.to)), 'the next-step list is exactly the engine plan at this tick (' + f1.next.length + ' hand-offs)');
+  ok(f1.held.every(e => X.decide(e.from, e.to, pid).verdict === 'withhold' && e.lasting && !/will not receive/i.test(e.text)), 'every not-selected neighbour carries a duration and never says "will not receive" (' + f1.held.length + ')');
+  const before = JSON.stringify(f1.next.map(e => e.from + '>' + e.to)); M.step(); M.step();
+  ok(JSON.stringify(X.frontier(pid).next.map(e => e.from + '>' + e.to)) !== before, 'two minutes later the list is different: it is recomputed, never remembered');
   M.reset(); const r2 = MP(), p2 = r2.packetId; let changed = 0, last = ''; for (let i = 0; i < 7; i++) { const f = X.frontier(p2), k = JSON.stringify([f.next.map(e => e.from + '>' + e.to + e.code), f.held.map(e => e.from + '>' + e.to + e.code)]); if (k !== last) changed++; last = k; M.step(); }
   ok(changed >= 5, 'the forwarding plan changes almost every tick, so a cached explanation would go stale (' + changed + ' distinct plans in 7 ticks)'); });
 

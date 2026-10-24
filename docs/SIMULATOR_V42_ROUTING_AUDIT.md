@@ -1,5 +1,7 @@
 # Simulator V4.2: topology and directed-routing correctness audit
 
+> The Story's neighbour-comparison card mentioned below (sections 0, 8, 9) was later removed from the Story; the engine behaviour and Explore explanations are as described. See `docs/SIMULATOR_V4_MISSING_STORY.md`.
+
 Branch `feature/simulator-v4-routing-fixes`, from `feature/simulator-v4-logic-fixes` at `e8ca008`. The presentation (Story, Explore, camera, previews, colours) is unchanged. This document records what the audit found in the **network model and the forwarding decisions**, what was changed in the engine, and which test now guards each change. Nothing here was fixed by rewording: where a message took a strange path or an explanation turned out false, the model was corrected and the explanation then reads the corrected model.
 
 ## 0. In one page
@@ -235,11 +237,8 @@ Screenshots in `docs/screenshots/sim-v42/` (1440x900, real page):
 | `e0` | emergency, opening |
 | `e4` | emergency gap: 31 have it, 31 cut off behind the crossroads phone |
 | `e5` | emergency after the install: the denser local mesh, 31 newly connected phones |
-| `m3` | missing person, the forwarding decision: A chosen next, B "not selected now" with its distances |
-| `m4` | missing person after the decision |
-| `mg` | missing person gap |
-| `mr` | missing person, the far-side phone and its example sighting |
-| `md` | missing person result |
+| `m3` | (replaced: see `docs/screenshots/sim-v43/`) |
+| `m4`, `mg`, `mr`, `md` | (replaced: see `docs/screenshots/sim-v43/`) |
 | `bc`, `bd` | community report, then the busy-link contest (4 of 4) |
 | `x2` | Explore: Safdarjung Enclave to Lajpat Nagar before the bridge (a custom request injected through the engine API, so the scenario label still says Emergency): 31 hold it, 0 of 8 Lajpat Nagar phones (violet rings), "Stalled: no route across the gap" |
 | `x3` | the same request after the crossroads phone joins: all 8 Lajpat Nagar phones hold it |

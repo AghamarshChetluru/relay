@@ -282,16 +282,16 @@ section('6 explanations vs the engine on every phone and neighbour', () => {
         S().adj[h].forEach(d => { if (!M.canRelay(d) || M.nodeHas(d, pid)) return; const dec = X.decide(h, d, pid), sel = plan.find(x => x.d === d); pairs++;
           if (c.stop) { if (dec.verdict !== 'stop') bad.push('stop mismatch'); return; }
           if (sel) { if (!(dec.verdict === 'send' || dec.verdict === 'detour') || dec.verdict === 'detour' !== !!sel.det) bad.push(h + '>' + d + ' plan says ' + (sel.det ? 'detour' : 'send') + ' text says ' + dec.verdict); }
-          else { if (dec.verdict !== 'withhold') bad.push(h + '>' + d + ' not in plan but verdict ' + dec.verdict); if (!dec.lasting || !dec.brief) bad.push(h + '>' + d + ' withhold without lasting/brief'); if (dec.verdict === 'withhold' && !/Not selected/.test(dec.text) && c.policy === 'directed') bad.push(h + '>' + d + ' text lacks "Not selected": ' + dec.text.slice(0, 60)); }
+          else { if (dec.verdict !== 'withhold') bad.push(h + '>' + d + ' not in plan but verdict ' + dec.verdict); if (!dec.lasting) bad.push(h + '>' + d + ' withhold without a duration'); if (dec.verdict === 'withhold' && !/Not selected/.test(dec.text) && c.policy === 'directed') bad.push(h + '>' + d + ' text lacks "Not selected": ' + dec.text.slice(0, 60)); }
           texts[dec.code] = dec.text;
-          if (FORBIDDEN.test(dec.text) || FORBIDDEN.test(dec.brief || '')) bad.push('forbidden wording: ' + dec.text.slice(0, 80));
+          if (FORBIDDEN.test(dec.text)) bad.push('forbidden wording: ' + dec.text.slice(0, 80));
           if (dec.verdict === 'withhold' && c.policy === 'directed') { const row = c.rows.find(r => r.d === d); if (row.code !== dec.code) bad.push('code ' + dec.code + ' vs engine ' + row.code); }
         }); });
       M.step();
     }
   }
   ok(pairs > 1000, 'compared ' + pairs + ' holder/neighbour decisions across 8 requests and 560 minutes with the engine\'s own classification');
-  ok(bad.length === 0, 'the explanation always agrees with the plan, carries a duration and a one-line brief, uses the engine\'s own reason code, and never says "will not receive"' + (bad.length ? ' FIRST: ' + bad[0] : ''));
+  ok(bad.length === 0, 'the explanation always agrees with the plan, carries a duration, uses the engine\'s own reason code, and never says "will not receive"' + (bad.length ? ' FIRST: ' + bad[0] : ''));
   ok(Object.keys(texts).length >= 6, 'the audited run produced ' + Object.keys(texts).length + ' distinct decision kinds (' + Object.keys(texts).join(', ') + ')');
 });
 section('6 stopped means stopped', () => {

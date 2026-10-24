@@ -24,7 +24,7 @@ function ctx(f){
     var mm=sub.match(/reached (\d+) other phones?/);if(mm&&(+mm[1]!==held-1))v.push('sub says '+mm[1]+' other phones but engine has '+(held-1)+' besides the sender');
     var b0=C.Q('#s-metrics b');if(b0&&/have it|phones have/.test(C.T('#s-metrics span'))&&+b0.textContent!==held)v.push('metric '+b0.textContent+' != engine holders '+held);
     var cm=sub.match(/(\d+) of the (\d+) newly connected/);if(cm){var ns=C.ST.ctx.install?C.ST.ctx.install.newSet:[];var got=ns.filter(function(i){return M.nodeHas(i,tp)}).length;if(+cm[1]!==got||+cm[2]!==ns.length)v.push('crossing sentence '+cm[0]+' != engine '+got+'/'+ns.length)}
-    var dp=C.Q('#s-decision');if(dp){var live=X.decisionPair(C.RS.state.decision&&C.RS.state.decision.pid);if(!live||C.RS.state.decision.tick!==S.tick||dp.textContent.indexOf(live.a.brief||live.a.text)<0||dp.textContent.indexOf(live.b.brief||live.b.text)<0)v.push('decision card does not match the current plan (tick '+(C.RS.state.decision&&C.RS.state.decision.tick)+' vs engine '+S.tick+')');if(!C.Q('#s-step').hidden)v.push('Step is available while a decision card is open')}
+    if(C.Q('#s-decision')||/A ·|B ·/.test(C.T('#s-root')))v.push('a neighbour-comparison card is on screen');
     if(m==='expired'&&!M.isExpired(S.packets[C.RS.moment().pid]))v.push('moment says expired but the packet has not expired');
     if(m==='gap'){var sr=X.stopReason(tp);if(sr.code!=='gap'&&sr.code!=='policy')v.push('gap shown but stop reason is '+sr.code);if(M.isExpired(S.packets[tp]))v.push('gap shown for an expired message')}
     if(m==='gap'&&/cut off behind it/.test(C.T('#s-metrics'))){var br=X.bridge(tp);if(br&&+C.QA('#s-metrics b')[1].textContent!==br.unlock)v.push('"cut off behind it" != engine unlock')}
@@ -92,23 +92,23 @@ C.click('#s-primary');ok(await C.waitFor(function(){return C.mom()==='arrived'},
 C.click('#s-primary');ok(await C.waitFor(function(){return C.mom()==='done'},60000),'2 and the acknowledgment journey finishes');
 finish('2 mode switch / active packet (emergency)',C);
 
-/* ================= 3. missing person: decision staleness, newly connected, sighting wording, policy limits ================= */
+/* ================= 3. missing person: one continuous story, newly connected, sighting wording, policy limits ================= */
 C=await page();M=C.M;X=C.X;API=C.API;ST=C.ST;K=C.K;API.setScenario('missing');await sleep(150);
 var lc=C.S().order.filter(function(i){return M.canRelay(i)&&M.hoodState(i).reliable&&M.hoodState(i).id==='LC'});
 ok(C.QA('#s-net .sring.tgt').length===lc.length&&C.QA('#s-net .sz.target').length===0&&/Declares Lodhi Colony/.test(C.T('#s-key')),'3 the last-known area is the set of phones that DECLARE it ('+lc.length+' ringed), not a drawn rectangle');
 ok(/reports a child/.test(C.T('#s-sub'))&&!/is looking/.test(C.T('#s-sub')),'3 the missing-child text is a parent\'s report: "'+C.T('#s-sub')+'"');
 var cardTxt=C.T('.ph');ok(/Reported by the requester, not confirmed/.test(cardTxt)&&/Last seen near/.test(cardTxt),'3 the draft says last-seen is reported, not confirmed');
-C.click('#s-primary');ok(await C.waitFor(function(){return C.mom()==='decision'||C.mom()==='gap'},60000)&&C.mom()==='decision','3 the engine reaches a real forwarding choice');
-var dec=C.RS.state.decision,mp=API.mainPid(),t0=C.S().tick;
-ok(C.Q('#s-step').hidden===true&&/Next step/.test(C.T('#s-decision')),'3 Step is unavailable while the card is open, and the card is labelled as the NEXT step');
-API.doStep();await sleep(60);                                      /* someone advances the engine behind the card's back (Explore, a script, anything) */
-ok(C.S().tick===t0+1&&(!C.Q('#s-decision')||C.RS.state.decision.tick===C.S().tick),'3 after an outside Step the old plan is not shown as current (card '+(C.Q('#s-decision')?'recomputed for tick '+C.RS.state.decision.tick:'withdrawn')+')');
-if(C.Q('#s-decision')){var live=X.decisionPair(mp);ok(!!live&&C.T('#s-decision').indexOf(live.a.brief||live.a.text)>=0&&C.T('#s-decision').indexOf(live.b.brief||live.b.text)>=0,'3 the recomputed card states the CURRENT reasons')}
+C.click('#s-primary');var mp=API.mainPid(),sawMoments={};C.R.on('paint',function(){sawMoments[C.mom()]=1});
+ok(await C.waitFor(function(){return C.S().tick>=3},30000)&&C.mom()==='spread'&&ST.playing,'3 the request is spreading on its own: the story did not stop to ask anything');
+/* someone advances the engine behind Story's back (Explore, a script): the story just follows the engine */
+API.pause();var t0=C.S().tick;API.doStep();await sleep(60);
+ok(C.S().tick===t0+1&&C.mom()==='spread'&&!C.Q('#s-decision')&&/Phones pass it on/.test(C.T('#s-head')),'3 after an outside Step Story still tells the same story from the new state: "'+C.T('#s-head')+'"');
+ok(!C.Q('#s-step').hidden,'3 Step is available while it spreads (nothing is waiting for an answer)');
 for(var k2=0;k2<3;k2++){API.doStep();await sleep(40)}
 C.click('#s-to-explore');await sleep(120);C.click('#btn-step');C.click('#btn-step');await sleep(60);C.click('#to-story');await sleep(160);
-ok(!C.Q('#s-decision')||C.RS.state.decision.tick===C.S().tick,'3 after Explore stepping twice and returning, the card is current or gone');
-if(C.mom()==='decision')C.click('#s-primary');else if(!ST.playing)C.click('#s-primary');
-ok(await C.waitFor(function(){return C.mom()==='gap'},90000),'3 the request stalls at the real gap');
+ok(C.mom()==='spread'||C.mom()==='gap','3 after Explore stepping twice and returning, Story is in the engine\'s moment ('+C.mom()+')');
+if(!ST.playing&&C.mom()==='spread')C.click('#s-primary');
+ok(await C.waitFor(function(){return C.mom()==='gap'},90000)&&!sawMoments.decision,'3 the request stalls at the real gap, and no decision screen was ever shown');
 var br3=X.bridge(mp),b3=X.snapshotConn(mp);ok(+C.QA('#s-metrics b')[1].textContent===br3.unlock,'3 gap: "cut off behind it" = '+br3.unlock);
 C.click('#s-primary');C.click('#s-accept');await sleep(120);var ins3=ST.ctx.install,a3=X.snapshotConn(mp);
 ok(ins3.newSet.length===a3.holders.length+a3.connected.length-b3.holders.length-b3.connected.length-1&&+C.QA('#s-metrics b')[1].textContent===ins3.newSet.length,'3 "newly connected" is the true set difference: before '+(b3.holders.length+b3.connected.length)+' connected (incl. holders), after '+(a3.holders.length+a3.connected.length)+', the bridge is 1, so '+ins3.newSet.length+' new; shown '+C.QA('#s-metrics b')[1].textContent+' (a synthetic network with an already-connected phone is in tests/sim_routing_test.js)');

@@ -167,19 +167,28 @@ var lcPhones=S().order.filter(function(i){return M.canRelay(i)&&M.hoodState(i).r
 ok(QA('#s-net .sz.target').length===0&&QA('#s-net .sring.tgt').length===lcPhones.length&&lcPhones.length>0,'10a the target is the set of phones that DECLARE Lodhi Colony ('+lcPhones.length+' ringed), not a drawn rectangle');
 ok(/Declares Lodhi Colony/.test(T('#s-key'))&&/clusters are where phones meet/.test(T('#s-note')),'10a the key and the stage note say clusters are schematic and areas are declared');
 click('#s-primary');mrid=ST.ctx.rid;mrp=API.mainPid();
-ok(await waitFor(function(){return mom()==='decision'||mom()==='gap'},60000),'10a the engine reaches a real forwarding choice');
-if(mom()==='decision'){var dec=RS.state.decision,pre=X.frontier(mrp);
-  await layoutCheck('decision');
-  ok(!!Q('#s-decision')&&/A ·/.test(T('#s-decision'))&&/B ·/.test(T('#s-decision')),'10a decision card compares two real neighbours');
-  ok(pre.next.some(function(e){return e.from===dec.src&&e.to===dec.a.to&&e.text===dec.a.text})&&(pre.held.concat(pre.next).some(function(e){return e.from===dec.src&&e.to===dec.b.to&&e.text===dec.b.text})),'10a both candidates and their reasons are the engine\'s own (Mesh.plan)');
-  ok(T('#s-decision').indexOf(dec.a.brief||dec.a.text)>=0&&T('#s-decision').indexOf(dec.b.brief||dec.b.text)>=0&&/steps?/.test(T('#s-decision')),'10a the card quotes the neighbourhood-graph distances');
-  ok(!/GPS (coordinates|position)|kilomet/i.test(T('#s-root')),'10a no GPS routing language');
-  var bHeld=dec.b.det?false:true,tick0=S().tick;click('#s-primary');await waitFor(function(){return S().tick>tick0},8000);
-  var mv=ST.report&&ST.report.moves.filter(function(m){return m.pid===mrp});
-  var aRaced=ST.report&&ST.report.waited.some(function(x){return x.pid===mrp&&x.from===dec.src&&x.to===dec.a.to&&x.code==='raced'});
-ok(mv&&(mv.some(function(m){return m.from===dec.src&&m.to===dec.a.to})||aRaced),'10a the preferred neighbour A received it on the next step (or another phone delivered it first)');
-  if(bHeld)ok(mv&&!mv.some(function(m){return m.from===dec.src&&m.to===dec.b.to}),'10a the neighbour B that was not selected did not receive it from that phone on the next step');}
+/* the missing-person story is one continuous journey: no forced comparison, hand-offs are shown as they happen, detours only when one happened */
+var moments={},mviol=[],detourPaints=0,plainPaints=0,pausedForever=false;
+R.on('paint',function(){try{var m=mom();moments[m]=1;var T0=RS.state.T,txt=T('#s-head')+' '+T('#s-sub');
+  if(Q('#s-decision')||/A ·|B ·|Continue/.test(T('#s-root')))mviol.push('comparison UI present at '+m);
+  if(m==='spread'){var dets=(T0&&T0.detours)||[];
+    if(dets.length){detourPaints++;if(!/short detour, which routing allows/.test(T('#s-sub')))mviol.push('detour happened but the sentence does not say so');if(QA('#s-net .sring.det').length!==dets.length)mviol.push('detour rings '+QA('#s-net .sring.det').length+' != '+dets.length);if(!/Detour · declares/.test(T('#s-net'))||!/Detour hand-off/.test(T('#s-key')))mviol.push('detour is not labelled and keyed');if(/imposs|never|cannot|forbidden/i.test(txt))mviol.push('detour described as impossible')}
+    else{plainPaints++;if(/detour/i.test(T('#s-head')+T('#s-sub')+T('#s-key')))mviol.push('detour mentioned when none happened');if(QA('#s-net .sring.det').length)mviol.push('detour ring without a detour')}
+    if(!/favouring areas near Lodhi Colony/.test(T('#s-head')))mviol.push('headline lost the search area: '+T('#s-head'));
+    if(!/Declares Lodhi Colony/.test(T('#s-key'))||!/not the drawing or GPS/.test(T('#s-note')))mviol.push('key/note lost the declared-area message')}
+}catch(e){mviol.push('checker '+e.message)}});
+ok(await waitFor(function(){return M.stats(mrp).held>=6||mom()==='gap'},60000)&&mom()==='spread','10a the request spreads without stopping to compare neighbours');
+API.pause();await sleep(120);
+var hopsNow=ST.report?ST.report.moves.filter(function(m){return m.pid===mrp}):[],hopEls=QA('#s-net line.se.hop');
+var links={};S().lastHops.filter(function(h){return h.packetId===mrp}).forEach(function(h){links[[h.from,h.to].sort().join('|')]=1});
+ok(Object.keys(links).length>0&&hopEls.length===Object.keys(links).length,'10a the links drawn as hand-offs are exactly the engine\'s last-step hand-offs ('+hopEls.length+' of '+Object.keys(links).length+')');
+var freshLabels=QA('#s-net text.slab.mute').map(function(t){return t.textContent}),fresh=Object.keys(links).reduce(function(a,k){return a.concat(k.split('|'))},[]).filter(function(i){return S().inbox[i][mrp]&&S().inbox[i][mrp].tick===S().tick});
+ok(freshLabels.length>0&&freshLabels.every(function(l){return /^Declares /.test(l)&&fresh.some(function(i){return l==='Declares '+S().nodes[i].area})}),'10a the newest receivers are labelled with the area they DECLARE ('+freshLabels.join(', ')+'), which is what routing reads');
+ok(!/GPS (coordinates|position)|kilomet/i.test(T('#s-sub')+T('#s-head')),'10a no GPS routing language in the story text');
+ST.playing||click('#s-primary');
 ok(await waitFor(function(){return mom()==='gap'},90000),'10a missing-person request stalls at the real gap');
+ok(!moments.decision&&mviol.length===0,'10a no decision screen ever appeared, and every paint of the spread was consistent: '+(mviol.length?mviol.slice(0,3).join(' | '):(plainPaints+' ordinary and '+detourPaints+' detour paints checked')));
+ok(plainPaints>0,'10a the spread showed ordinary hand-offs without any detour wording');
 click('#s-primary');click('#s-accept');await sleep(150);ok(/new path is open/.test(T('#s-head'))&&M.holders(mrp).length===M.stats(mrp).held,'10a bridge opens a route; nothing received yet');
 click('#s-primary');ok(await waitFor(function(){return mom()==='respond'},90000)&&/phone on the other side/.test(T('#s-head')),'10a the request reaches a phone on the other side');
 var E2=API.responder();ok(!!E2&&M.nodeHas(E2,mrp)&&ST.ctx.install.newSet.indexOf(E2)>=0&&E2!==ST.ctx.install.id,'10a the missing-person responder ('+E2+', '+S().nodes[E2].area+') is a far-side phone that really holds the request');

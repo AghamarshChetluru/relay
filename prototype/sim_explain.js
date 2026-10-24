@@ -90,23 +90,7 @@
        'phone' for this phone (its copy limit is spent); another phone may still pass it to this neighbour. */
   function minute(t) { return 'minute ' + t; }
   function mins(n) { return n + (n === 1 ? ' minute' : ' minutes'); }
-  function decide(src, dst, pid) { var d = decide0(src, dst, pid); if (d && d.verdict !== 'none' && !d.brief) d.brief = briefOf(d, src, dst, pid); return d; }
-  /* one short sentence for small spaces (Story); the full reason stays in .text */
-  function briefOf(d, src, dst, pid) {
-    var rt = S().packets[pid].route, T = targetNames(rt), a = area(dst), c = M.classify(src, pid), row = c.rows.filter(function (r) { return r.d === dst; })[0] || {};
-    var dd = row.s === null || row.s === undefined ? 'unknown' : steps(row.s), ds = c.ds === null || c.ds === undefined ? 'unknown' : steps(c.ds), other = ' ' + a + ' may still get it from another phone.';
-    switch (d.code) {
-      case 'closer': case 'equal': case 'same-area': return d.text;
-      case 'detour': return 'Detour: ' + a + ' is ' + dd + ' from ' + T + ' (this phone: ' + ds + '). Used because this phone has nothing closer to hand it to.';
-      case 'closer-exists': return 'Not selected now: ' + a + ' is ' + dd + ' from ' + T + ' (this phone: ' + ds + '). This phone has closer neighbours, so Relay does not send copies away from the target.' + other;
-      case 'fanout': case 'detour-fanout': return 'Not selected: this phone has used its copy limit.' + other;
-      case 'detour-used': return 'Not selected: ' + a + ' is ' + dd + ' from ' + T + ' (this phone: ' + ds + '), and this copy has used its detour.' + other;
-      case 'too-far': return 'Not selected now: ' + a + ' is ' + dd + ' from ' + T + ' (this phone: ' + ds + '), farther than a detour may go.' + other;
-      case 'inside-target': return 'Not selected: this copy is inside the target area and does not go outward.';
-    }
-    return d.text;
-  }
-  function decide0(src, dst, pid) {
+  function decide(src, dst, pid) {
     var s = S(), p = s.packets[pid], e = s.inbox[src][pid], rt = p.route;
     if (!e || !M.canRelay(src) || !M.canRelay(dst) || M.nodeHas(dst, pid)) return { verdict: 'none', code: 'n/a', text: '' };
     var c = M.classify(src, pid);
@@ -148,8 +132,8 @@
       if (!M.canRelay(src)) return;
       s.adj[src].forEach(function (dst) {
         var d = decide(src, dst, pid);
-        if (d.verdict === 'send' || d.verdict === 'detour') { out.next.push({ from: src, to: dst, det: d.verdict === 'detour', code: d.code, text: d.text, brief: d.brief }); out.frontierNodes[src] = 1; }
-        else if (d.verdict === 'withhold') out.held.push({ from: src, to: dst, code: d.code, text: d.text, brief: d.brief, lasting: d.lasting || 'now' });
+        if (d.verdict === 'send' || d.verdict === 'detour') { out.next.push({ from: src, to: dst, det: d.verdict === 'detour', code: d.code, text: d.text }); out.frontierNodes[src] = 1; }
+        else if (d.verdict === 'withhold') out.held.push({ from: src, to: dst, code: d.code, text: d.text, lasting: d.lasting || 'now' });
         else if (d.verdict === 'stop' && !out.stop) out.stop = d;
       });
     });
@@ -254,15 +238,6 @@
     return { newlyConnected: after.connected.filter(function (i) { return !was[i] && i !== bridgeId; }), alreadyConnected: before.connected.slice(), bridge: bridgeId,
       bridgeWasHolder: before.holders.indexOf(bridgeId) >= 0, connectedBefore: before.holders.length + before.connected.length, connectedAfter: after.holders.length + after.connected.length };
   }
-  /* The next-step forwarding choice (one phone, a neighbour that gets it, a neighbour that does not), always computed from the CURRENT engine state. */
-  function decisionPair(pid) {
-    if (!pid) return null; var fr = frontier(pid), by = {};
-    fr.next.forEach(function (e) { var o = by[e.from] = by[e.from] || {}; if (e.code === 'closer' || e.code === 'equal' || e.code === 'same-area') { if (!o.a || (e.code === 'closer' && o.a.code !== 'closer')) o.a = e; } else if (e.det && !o.b) o.b = e; });
-    fr.held.forEach(function (e) { var o = by[e.from] = by[e.from] || {}; if (!o.b || o.b.det) o.b = e; });
-    var best = null; Object.keys(by).sort().forEach(function (src) { var o = by[src]; if (o.a && o.b && (!best || (o.a.code === 'closer' && best.a.code !== 'closer'))) best = { src: src, a: o.a, b: o.b, tick: S().tick, pid: pid }; });
-    return best;
-  }
-
   /* ---------- the neighbourhood graph used by directed routing (counts are real engine data) ---------- */
   function hoodGraph(pid) {
     var s = S(), p = pid && s.packets[pid], targets = (p && p.route.targets) || [], rows = {};
@@ -272,5 +247,5 @@
   }
 
   global.SimExplain = { nm: nm, area: area, who: who, packetInfo: packetInfo, groupsFor: groupsFor, decide: decide, frontier: frontier, neighbours: neighbours, chain: chain,
-    snapshotPlan: snapshotPlan, report: report, connectivity: connectivity, bridge: bridge, hoodGraph: hoodGraph, reach: reach, stopReason: stopReason, snapshotConn: snapshotConn, diffConn: diffConn, decisionPair: decisionPair, liveLinks: liveLinks, linkKind: linkKind, linkText: linkText, hoodName: hoodName, targetNames: targetNames };
+    snapshotPlan: snapshotPlan, report: report, connectivity: connectivity, bridge: bridge, hoodGraph: hoodGraph, reach: reach, stopReason: stopReason, snapshotConn: snapshotConn, diffConn: diffConn, liveLinks: liveLinks, linkKind: linkKind, linkText: linkText, hoodName: hoodName, targetNames: targetNames };
 })(typeof window !== 'undefined' ? window : global);

@@ -60,7 +60,7 @@ body.mode-explore{overflow:auto}
 .sring.origin{stroke:#fff}.sring.resp{stroke:#5eead4}.sring.bridge{stroke:#f5a524}.sring.joined{stroke:#2dd4bf}
 .slab{fill:#f1f6ff;font-weight:700;paint-order:stroke;stroke:#0b1626;stroke-linejoin:round;pointer-events:none}
 .slab.amber{fill:#ffc765}.slab.teal{fill:#7ff0dd}.slab.mute{fill:#aebdd3;font-weight:650}
-.sdot{pointer-events:none}.sdot.req{fill:#d6ecff}.sdot.rep{fill:#e6dcff}.sdot.urg{fill:#ffb0b0}
+.sdot{pointer-events:none}.sdot.req{fill:#d6ecff}.sdot.rep{fill:#e6dcff}.sdot.urg{fill:#ffb0b0}.sdot.det{fill:#ffc266}
 .sbridge{cursor:pointer}.sbridge .plus{stroke:#0b1626;fill:#f5a524}
 .s-key{position:absolute;left:14px;bottom:12px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#a9bad0;pointer-events:none}
 .s-key span{display:inline-flex;align-items:center;gap:6px}
@@ -93,8 +93,7 @@ body.mode-explore{overflow:auto}
 .pop .row{display:flex;gap:8px}
 .story .pop button{flex:1;min-height:36px;border-radius:10px;border:1px solid #cfd9e6;background:#fff;font-weight:700}
 .story .pop button.go{background:var(--s-primary);border-color:var(--s-primary);color:#fff}
-.pop.decision{width:290px}.pop .cand{border-radius:10px;padding:8px 10px;margin:0 0 7px;font-size:12.8px;line-height:1.35;color:#25374d}
-.pop .cand.a{background:#e7f8f2}.pop .cand.b{background:#fff3dc}.pop .cand strong{display:block;font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px}
+
 .tipbox{position:absolute;max-width:280px;background:#0f1b2d;color:#eef5ff;border:1px solid #2c4966;border-radius:10px;padding:7px 10px;font-size:12.5px;line-height:1.35;pointer-events:none;box-shadow:0 8px 20px rgba(0,0,0,.4)}
 .tipbox b{display:block}
 .contest{position:absolute;background:#fff;color:var(--s-ink);border-radius:14px;padding:10px 12px;box-shadow:0 12px 34px rgba(0,0,0,.45);font-size:13px;width:248px}
@@ -125,5 +124,5 @@ body.mode-explore{overflow:auto}
 }
 @media (max-width:1100px){.s-progress{display:none}.s-metrics{gap:16px}}
 @media (prefers-reduced-motion:reduce){.story *{animation:none!important;transition:none!important}}
-.sring.tgt{stroke:#a78bfa;stroke-opacity:.9}.s-key i.tgt{background:none;border:2px solid #a78bfa}
+.sring.tgt{stroke:#a78bfa;stroke-opacity:.9}.sring.det{stroke:#f5a524;stroke-dasharray:3 2}.s-key i.det{background:none;border:2px dashed #f5a524}.s-key i.tgt{background:none;border:2px solid #a78bfa}
 .s-note{position:absolute;right:14px;bottom:12px;font-size:11.5px;color:#7e93ad;pointer-events:none;max-width:46%;text-align:right}

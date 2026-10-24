@@ -24,7 +24,7 @@ function ctx(f){
     var mm=sub.match(/reached (\d+) other phones?/);if(mm&&(+mm[1]!==held-1))v.push('sub says '+mm[1]+' other phones but engine has '+(held-1)+' besides the sender');
     var b0=C.Q('#s-metrics b');if(b0&&/have it|phones have/.test(C.T('#s-metrics span'))&&+b0.textContent!==held)v.push('metric '+b0.textContent+' != engine holders '+held);
     var cm=sub.match(/(\d+) of the (\d+) newly connected/);if(cm){var ns=C.ST.ctx.install?C.ST.ctx.install.newSet:[];var got=ns.filter(function(i){return M.nodeHas(i,tp)}).length;if(+cm[1]!==got||+cm[2]!==ns.length)v.push('crossing sentence '+cm[0]+' != engine '+got+'/'+ns.length)}
-    var dp=C.Q('#s-decision');if(dp){var live=X.decisionPair(C.RS.state.decision&&C.RS.state.decision.pid);if(!live||C.RS.state.decision.tick!==S.tick||dp.textContent.indexOf(live.a.brief||live.a.text)<0||dp.textContent.indexOf(live.b.brief||live.b.text)<0)v.push('decision card does not match the current plan (tick '+(C.RS.state.decision&&C.RS.state.decision.tick)+' vs engine '+S.tick+')');if(!C.Q('#s-step').hidden)v.push('Step is available while a decision card is open')}
+    if(C.Q('#s-decision')||/A ·|B ·/.test(C.T('#s-root')))v.push('a neighbour-comparison card is on screen');
     if(m==='expired'&&!M.isExpired(S.packets[C.RS.moment().pid]))v.push('moment says expired but the packet has not expired');
     if(m==='gap'){var sr=X.stopReason(tp);if(sr.code!=='gap'&&sr.code!=='policy')v.push('gap shown but stop reason is '+sr.code);if(M.isExpired(S.packets[tp]))v.push('gap shown for an expired message')}
     if(m==='gap'&&/cut off behind it/.test(C.T('#s-metrics'))){var br=X.bridge(tp);if(br&&+C.QA('#s-metrics b')[1].textContent!==br.unlock)v.push('"cut off behind it" != engine unlock')}
@@ -97,12 +97,11 @@ finish('3 waiting',C);
 /* ================= 4. all three Story scenarios, wording monitor on every paint ================= */
 for(var sc of ['emergency','missing','broadcast']){
   C=await page();M=C.M;X=C.X;API=C.API;ST=C.ST;K=C.K;API.setScenario(sc);await sleep(120);
-  var bad=[];C.R.on('paint',function(){var t=C.T('#s-root')+' '+C.T('#s-decision');if(FORBID.test(t))bad.push(t.match(FORBID)[0])});
+  var bad=[];C.R.on('paint',function(){var t=C.T('#s-root');if(FORBID.test(t))bad.push(t.match(FORBID)[0])});
   C.click('#s-primary');
   var seq=[],lastM='';for(var g=0;g<600;g++){await sleep(250);var m=C.mom();if(seq[seq.length-1]!==m)seq.push(m);
     var fresh=m!==lastM;lastM=m;
-    if(m==='decision'&&fresh){C.click('#s-primary')}
-    else if(m==='gap'&&fresh){C.click('#s-primary');if(C.Q('#s-accept')){C.click('#s-accept')}}
+    if(m==='gap'&&fresh){C.click('#s-primary');if(C.Q('#s-accept')){C.click('#s-accept')}}
     else if((m==='connect'||m==='respond'||m==='arrived'||m==='ready'||m==='intro')&&fresh){if(C.Q('#s-primary'))C.click('#s-primary')}
     else if(m==='done'||m==='expired'||m==='stopped'||(m==='contest'&&sc==='broadcast'&&C.Q('#s-replay')))break}
   ok(['done','stopped','contest'].indexOf(C.mom())>=0,'4 '+sc+' runs to the end (moments: '+seq.join(' > ')+')');

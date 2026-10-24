@@ -31,7 +31,7 @@
   function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
   function lc(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
 
-  var V = { built: false, nodeEls: {}, edgeEls: [], edgeMap: {}, zoneEls: {}, cam: null, tween: null, u: 1, dots: [], raf: 0, why: {}, open: {}, consent: false, decision: null, decisionShown: false,
+  var V = { built: false, nodeEls: {}, edgeEls: [], edgeMap: {}, zoneEls: {}, cam: null, tween: null, u: 1, dots: [], raf: 0, why: {}, open: {}, consent: false,
     wide: false, sig: '', tip: null, m: null, anchored: [], scal: [] };
   var NEXT = { emergency: 'missing', missing: 'broadcast', broadcast: 'emergency' };
   var NEXT_LABEL = { missing: 'Try the missing-person scenario', broadcast: 'Try the community update', emergency: 'Try the emergency scenario' };
@@ -44,7 +44,6 @@
   function clusterOf(id) { var z = S().hoods.filter(function (h) { return h.id === S().nodes[id].zone; })[0]; return z ? z.name : ''; }
   function pathMoment(pid) {
     var ctx = st.ctx, sr = X.stopReason(pid);
-    if (V.decision) return { id: 'decision' };
     if (API.bridged()) {
       var base = ctx.install ? ctx.install.before.holders : (ctx.stallHeld || 0);
       if (M.stats(pid).held > base) return (sr.code !== 'moving' && !API.responder()) ? { id: 'stopped', why: sr } : { id: 'crossing' };
@@ -63,7 +62,7 @@
   }
   function moment() {
     var m = baseMoment(), tp = tracked(m);
-    if (tp && ['spread', 'decision', 'gap', 'connect', 'crossing', 'return', 'ack', 'ready', 'stopped'].indexOf(m.id) >= 0 && M.isExpired(S().packets[tp]) && !delivered(tp, m)) return { id: 'expired', pid: tp };
+    if (tp && ['spread', 'gap', 'connect', 'crossing', 'return', 'ack', 'ready', 'stopped'].indexOf(m.id) >= 0 && M.isExpired(S().packets[tp]) && !delivered(tp, m)) return { id: 'expired', pid: tp };
     return m;
   }
   function baseMoment() {
@@ -90,7 +89,7 @@
     return API.mainPid();
   }
   function stepIndex(m) {
-    var i = { need: 0, spread: 1, decision: 1, stopped: 1, expired: 1, gap: 2, connect: 3, crossing: 3 }[m.id]; return i == null ? 4 : i;
+    var i = { need: 0, spread: 1, stopped: 1, expired: 1, gap: 2, connect: 3, crossing: 3 }[m.id]; return i == null ? 4 : i;
   }
   function playing() { return st.playing; }
   function isPlayMoment(m) { return ['spread', 'crossing', 'return', 'ack'].indexOf(m.id) >= 0; }
@@ -104,10 +103,10 @@
     if (m.id === 'gap') g.cutOff.forEach(function (i) { T.cut[i] = 1; });
     if (m.id === 'connect' || m.id === 'crossing') g.reachable.forEach(function (i) { T.reach[i] = 1; });
     g.holders.forEach(function (i) { var v = s.inbox[i][pid].via; if (v) T.path[v + '|' + i] = T.path[i + '|' + v] = 1; });
+    T.detours = s.lastHops.filter(function (x) { var a = s.inbox[x.from][pid], b = s.inbox[x.to][pid]; return x.packetId === pid && a && b && b.detours > a.detours; });   // genuine detour hand-offs of the last step, from the engine's own records
     s.lastHops.forEach(function (x) { if (x.packetId === pid) { T.fresh[x.to] = 1; T.hop[x.from + '|' + x.to] = T.hop[x.to + '|' + x.from] = 1; } });
     if (T.kind === 'rep' && API.mainPid()) M.holders(API.mainPid()).forEach(function (i) { if (!T.holds[i] && M.canRelay(i)) T.prior[i] = 1; });
     if (m.id === 'connect' || m.id === 'crossing') X.frontier(pid).next.forEach(function (e) { T.poss[e.from + '|' + e.to] = T.poss[e.to + '|' + e.from] = 1; });
-    if (m.id === 'decision' && V.decision) { var dsc = V.decision; T.poss[dsc.src + '|' + dsc.a.to] = T.poss[dsc.a.to + '|' + dsc.src] = 1; T.amber[dsc.src + '|' + dsc.b.to] = T.amber[dsc.b.to + '|' + dsc.src] = 1; }
     if (m.id === 'gap') { var b = X.bridge(pid); if (b) { T.bridge = b.id; s.adj[b.id].forEach(function (o) { if (M.canRelay(o)) T.amber[b.id + '|' + o] = T.amber[o + '|' + b.id] = 1; }); } }
     return T;
   }
@@ -143,8 +142,9 @@
     if (V.wide) return fitVB(all, 28, 0);
     switch (m.id) {
       case 'need': return fitVB(around([o]), 80, 560, 285);
-      case 'spread': ids = around(M.holders(T.pid).filter(M.canRelay)); break;
-      case 'decision': ids = around([V.decision.src]).concat([V.decision.a.to, V.decision.b.to]); minW = 560; pad = 90; break;
+      case 'spread': ids = around(M.holders(T.pid).filter(M.canRelay));
+        if (st.scen === 'missing') { var tgts = API.REQ.missing.request.targets; ids = uniq(ids.concat(s.order.filter(function (i) { return M.canRelay(i) && tgts.indexOf(trustedHood(i)) >= 0; }))); minW = 760; pad = 70; }   // keep the last-known area in view while the request moves toward it
+        break;
       case 'gap': case 'return': case 'ack': case 'intro': return fitVB(all, 28, 0);
       case 'done': case 'arrived': return fitVB(all, 28, 0, 285);
       case 'connect': return fitVB(all, 28, 0);   // before/after needs both groups in view
@@ -195,7 +195,6 @@
     else if (m.id === 'spread') dimSet = uniq(M.holders(T.pid).filter(M.canRelay).reduce(function (a, i) { return a.concat([i], relayNeighbours(i)); }, []));
     else if (m.id === 'return' || m.id === 'ack') dimSet = uniq(Object.keys(T.holds).reduce(function (a, i) { return a.concat([i], relayNeighbours(i)); }, []));
     else if (m.id === 'ready' || m.id === 'contest') { var c = firstContest(); dimSet = c ? uniq([c.w.from, c.w.to].concat(relayNeighbours(c.w.from))) : uniq([o].concat(relayNeighbours(o))); }
-    else if (m.id === 'decision') dimSet = uniq([V.decision.src].concat(relayNeighbours(V.decision.src)));
     var inDim = {}; if (dimSet) dimSet.forEach(function (i) { inDim[i] = 1; });
     s.order.forEach(function (id) {
       var x = V.nodeEls[id], on = M.canRelay(id), cls = 'sn';
@@ -225,6 +224,11 @@
     if (targets.length) s.order.forEach(function (i) { if (M.canRelay(i) && targets.indexOf(trustedHood(i)) >= 0 && i !== o) ring(i, 'tgt', 8); });   // phones that actually declare the last-known area
     var tracking = T.pid != null, oLabel = { emergency: 'Needs help', missing: 'Looking for a child', broadcast: 'Posted the update' }[sc];
     if (m.id === 'need' || (tracking && m.id !== 'contest' && m.id !== 'ready')) { ring(o, 'origin', 10.5); lab(o, oLabel); }
+    if (sc === 'missing' && T.kind === 'req' && ['spread', 'gap', 'connect', 'crossing'].indexOf(m.id) >= 0) {   // the last hand-offs, each labelled with the area the receiving phone DECLARES (that is what routing reads)
+      var dets = {}, shown = 0; (T.detours || []).forEach(function (x) { dets[x.to] = 1; ring(x.to, 'det', 9); lab(x.to, 'Detour · declares ' + area(x.to), 'amber'); shown++; });
+      Object.keys(T.fresh).filter(function (i) { return !dets[i] && i !== o && Math.hypot(s.nodes[i].x - s.nodes[o].x, s.nodes[i].y - s.nodes[o].y) > 150; })   // not on top of the requester's own label
+        .slice(0, 3).forEach(function (i) { lab(i, 'Declares ' + area(i), 'mute'); });
+    }
     if (m.id === 'ready') ring(o, 'origin', 10.5);
     var E = API.responder(), A = K().A;
     if (sc !== 'broadcast' && E && ['respond', 'return', 'arrived', 'ack', 'done'].indexOf(m.id) >= 0) { ring(E, 'resp', 10.5); lab(E, 'Responder', 'teal'); }
@@ -233,7 +237,6 @@
     if ((m.id === 'connect' || m.id === 'crossing') && st.ctx.install) { ring(st.ctx.install.id, 'joined', 11); lab(st.ctx.install.id, 'Joined Relay', 'teal'); }
     if (m.id === 'gap') groupLabel(T.cut, 'Can’t receive it yet');
     if (m.id === 'connect') groupLabel(T.reach, 'Now reachable, not received');
-    if (m.id === 'decision') { var dd = V.decision; ring(dd.src, 'origin', 10.5); lab(dd.src, 'This phone', 'mute'); ring(dd.a.to, 'resp', 10); lab(dd.a.to, 'A · ' + s.nodes[dd.a.to].area, 'teal'); ring(dd.b.to, 'bridge', 10); lab(dd.b.to, 'B · ' + s.nodes[dd.b.to].area, 'amber'); }
     if (m.id === 'contest') { var cc = firstContest(); if (cc) { ring(cc.w.from, 'origin', 10.5); ring(cc.w.to, 'origin', 8); } }
     applyScale();
   }
@@ -267,12 +270,9 @@
         else { out.head = 'A neighbour has useful news.'; out.sub = 'A neighbour reports a water collection point in ' + area(API.poster()) + '. It’s unverified.'; }
         out.primary = { label: sc === 'broadcast' ? 'Send report' : 'Send request', fn: actSend }; out.info = true; break;
       case 'spread':
-        out.head = sc === 'missing' ? 'Relay favors phones closer to the last-known area.' : sc === 'broadcast' ? 'Reports travel the same way.' : 'One request. Passed from phone to phone.';
-        out.sub = held <= 1 ? 'It’s only on the original phone so far.' : 'The ' + base + ' reached ' + plural(held - 1, 'other phone', 'other phones') + '.' + (sc === 'missing' ? ' Areas are declared by people, not GPS.' : '');
+        out.head = sc === 'missing' ? 'Phones pass it on, favouring areas near ' + X.targetNames(s.packets[T.pid].route) + '.' : sc === 'broadcast' ? 'Reports travel the same way.' : 'One request. Passed from phone to phone.';
+        out.sub = held <= 1 ? 'It’s only on the original phone so far.' : 'The ' + base + ' reached ' + plural(held - 1, 'other phone', 'other phones') + '.' + (sc === 'missing' ? (T.detours && T.detours.length ? ' A copy just took a short detour, which routing allows.' : ' Areas are declared by people, not GPS.') : '');
         out.metrics = [have]; out.primary = playBtn(); break;
-      case 'decision':
-        out.head = 'Relay favors phones closer to the last-known area.'; out.sub = 'Next step: this phone has two neighbours. ' + (V.decision.b.det ? 'Both get it, one as a permitted detour.' : 'One is chosen for the next step. The other isn’t, for now.');
-        out.metrics = [have]; out.primary = { label: 'Continue', fn: actContinue }; break;
       case 'gap': {
         var gb = X.bridge(T.pid);
         out.head = 'The ' + base + ' can’t go any further.'; out.sub = 'One phone without Relay separates these groups.';
@@ -335,7 +335,7 @@
       act.appendChild(h('button', { class: 's-second', id: 's-next', on: { click: function () { API.setScenario(NEXT[st.scen]); } } }, NEXT_LABEL[NEXT[st.scen]]));
       act.appendChild(h('button', { class: 's-second', id: 's-explore2', on: { click: goExplore } }, 'Explore the network'));
     }
-    var canStep = !!(API.mainPid() && ['spread', 'crossing', 'return', 'ack'].indexOf(m.id) >= 0 && M.stats(tracked(m) || API.mainPid()).canMove);   // no Step while a decision card is open: it describes the NEXT step only
+    var canStep = !!(API.mainPid() && ['spread', 'crossing', 'return', 'ack'].indexOf(m.id) >= 0 && M.stats(tracked(m) || API.mainPid()).canMove);   
     $('s-step').hidden = !canStep; $('s-step').disabled = !canStep; $('s-playpause').hidden = true;
   }
 
@@ -388,9 +388,8 @@
   function renderOverlays(m, T) {
     var ov = $('s-overlay'), specs = previewSpecs(m, T), pops = [];
     if (V.consent && m.id === 'gap') pops.push('consent');
-    if (m.id === 'decision') pops.push('decision');
     if (m.id === 'contest') pops.push('contest');
-    var sig = JSON.stringify([m.id, specs.map(function (x) { return [x.node, x.mode, x.label, x.status, V.open[x.node + x.mode + m.id]]; }), pops, st.scen, V.decision && V.decision.src, firstContest() && firstContest().tick]);
+    var sig = JSON.stringify([m.id, specs.map(function (x) { return [x.node, x.mode, x.label, x.status, V.open[x.node + x.mode + m.id]]; }), pops, st.scen, firstContest() && firstContest().tick]);
     if (sig !== V.sig) {
       V.sig = sig; clear(ov); V.anchored = [];
       specs.forEach(function (sp) { var e = phoneEl(sp, sp.node + sp.mode + m.id); e.setAttribute('data-node', sp.node); ov.appendChild(e); V.anchored.push({ el: e, node: sp.node, side: 'auto' }); });
@@ -398,11 +397,6 @@
         var pop = h('div', { class: 'pop', id: 's-consent', role: 'dialog', 'aria-label': 'Let this phone join Relay' }, h('b', {}, 'Let this phone join Relay?'), h('p', {}, 'A nearby phone offers Relay to this one. If its owner accepts, it joins.'),
           h('div', { class: 'row' }, h('button', { class: 'go', id: 's-accept', on: { click: actJoin } }, 'Accept'), h('button', { id: 's-notnow', on: { click: function () { V.consent = false; render(); } } }, 'Not now')), h('small', {}, 'Simulated. Nothing is installed.'));
         pop.setAttribute('data-node', b); ov.appendChild(pop); V.anchored.push({ el: pop, node: b, side: 'auto' }); }
-      if (pops.indexOf('decision') >= 0) { var d = V.decision, ta = X.targetNames(S().packets[T.pid].route);
-        var dp = h('div', { class: 'pop decision', id: 's-decision' }, h('b', {}, 'Next step: one phone, two neighbours'),
-          h('div', { class: 'cand a' }, h('strong', {}, 'A · ' + S().nodes[d.a.to].area + ' · chosen next'), (d.a.brief || d.a.text)),
-          h('div', { class: 'cand b' }, h('strong', {}, 'B · ' + S().nodes[d.b.to].area + (d.b.det ? ' · detour' : ' · not selected now')), (d.b.brief || d.b.text)));
-        ov.appendChild(dp); V.anchored.push({ el: dp, node: d.src, side: 'auto', avoid: [d.a.to, d.b.to], strong: [d.src, d.a.to, d.b.to] }); }
       if (pops.indexOf('contest') >= 0) { var cc = firstContest(), s = S();
         if (cc) { var bx = h('div', { class: 'contest', id: 's-contest' }, h('b', {}, 'Link busy · one message per step'),
           h('div', { class: 'chipmsg first' }, X.packetInfo(cc.w.winner).name, h('em', {}, 'went first')), h('div', { class: 'chipmsg wait' }, X.packetInfo(cc.w.pid).name, h('em', {}, 'waited')));
@@ -436,13 +430,11 @@
   function playUntil() {
     var m0 = moment(), start = m0.id, active = tracked(m0) || API.mainPid();   // Story's active narrative packet; Explore's selected packet is irrelevant here
     API.play(function () {
-      if (st.scen === 'missing' && !V.decisionShown && moment().id === 'spread') { var d = X.decisionPair(API.mainPid()); if (d) { V.decision = d; V.decisionShown = true; return true; } }
       var n = moment().id; if (n === start) return false; if (start === 'connect' && n === 'crossing') { start = 'crossing'; return false; } return true;
     }, active);
   }
   function actSend() { stepsOf()[0].run(); render(); playUntil(); }
   function togglePlay() { if (st.playing) API.pause(); else playUntil(); }
-  function actContinue() { V.decision = null; V.sig = ''; render(); playUntil(); }
   function actAskJoin() { V.consent = true; V.sig = ''; render(); var b = $('s-accept'); if (b) b.focus(); }
   function actJoin() { var r = API.join(API.gapNode()); V.consent = false; V.sig = ''; if (!r.ok) st.notice = r.error; render(); }
   function actCross() { playUntil(); }
@@ -458,7 +450,7 @@
     var t0 = performance.now(), dur = Math.min(520, (st.interval || 640) * 0.8);
     V.dots = V.dots.filter(function (d) { return t0 - d.t0 < d.dur; });   // a dot from an earlier step never lingers into the next one
     rep.moves.forEach(function (mv) { if (!ids[mv.pid]) return; V.why[mv.from + '|' + mv.to + '|' + mv.pid] = mv.text;
-      var typ = s.packets[mv.pid].type; V.dots.push({ a: s.nodes[mv.from], b: s.nodes[mv.to], t0: t0, dur: dur, cls: typ === 'reply' || typ === 'ack' ? 'rep' : (mv.pid === st.ctx.urgentPid ? 'urg' : 'req') }); });
+      var typ = s.packets[mv.pid].type; V.dots.push({ a: s.nodes[mv.from], b: s.nodes[mv.to], t0: t0, dur: dur, cls: typ === 'reply' || typ === 'ack' ? 'rep' : (mv.det ? 'det' : mv.pid === st.ctx.urgentPid ? 'urg' : 'req') }); });
     if (V.dots.length && !V.raf) V.raf = requestAnimationFrame(frame);
   }
   function whyFor(a, b, T) {
@@ -495,7 +487,6 @@
   /* ================= main render ================= */
   function render() {
     if (st.mode !== 'story' || !V.built) return;
-    if (V.decision && V.decision.tick !== S().tick) V.decision = X.decisionPair(V.decision.pid);   // the engine moved (Step, Explore, anything): never show an old plan as the current one
     var m = moment(); if (m.id !== 'contest') V.wide = false; if (m.id !== 'gap') V.consent = false;
     var T = trackInfo(tracked(m), m), cp = copyFor(m, T); V.m = m; V.T = T;
     document.body.setAttribute('data-moment', m.id);
@@ -505,9 +496,10 @@
     var sc = $('s-scenario'); if (sc.value !== st.scen) sc.value = st.scen;
     var key = $('s-key'); clear(key);
     var tg = sc0() === 'missing', tgEntry = tg ? [['tgt', 'Declares Lodhi Colony']] : [];
+    $('s-note').textContent = tg ? 'Schematic: clusters are where phones meet. Routing follows the area each phone declares, not the drawing or GPS.' : 'Schematic: clusters are where phones meet. Each phone declares its own area.';
     if (m.id === 'need') { key.hidden = !tg; if (tg) tgEntry.forEach(function (x) { key.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); }); $('s-note').hidden = false; return; }   // nothing can be "received" yet
     key.hidden = false; $('s-note').hidden = false;
-    [['', 'Not yet received'], ['held', 'Has it'], ['off', 'No Relay']].concat(T.kind === 'rep' && T.pid ? [['rep', 'Has the reply']] : [], m.id === 'connect' || m.id === 'crossing' ? [['reach', 'Connected, not received']] : [], m.id === 'gap' ? [['cut', 'Cut off']] : [], tgEntry)
+    [['', 'Not yet received'], ['held', 'Has it'], ['off', 'No Relay']].concat(T.kind === 'rep' && T.pid ? [['rep', 'Has the reply']] : [], tg && T.detours && T.detours.length ? [['det', 'Detour hand-off']] : [], m.id === 'connect' || m.id === 'crossing' ? [['reach', 'Connected, not received']] : [], m.id === 'gap' ? [['cut', 'Cut off']] : [], tgEntry)
       .forEach(function (x) { key.appendChild(h('span', {}, h('i', { class: x[0] }), x[1])); });
   }
 
@@ -528,7 +520,7 @@
     window.addEventListener('resize', function () { V.cam = null; render(); });
     RS.on('paint', render); RS.on('step', onStep);
     RS.on('pause', function () { V.dots = []; if (V.gD) clear(V.gD); });
-    RS.on('reset', function () { V.decision = null; V.decisionShown = false; V.why = {}; V.open = {}; V.consent = false; V.wide = false; V.sig = ''; V.cam = null; V.dots = []; });
+    RS.on('reset', function () { V.why = {}; V.open = {}; V.consent = false; V.wide = false; V.sig = ''; V.cam = null; V.dots = []; });
     RS.on('mode', function () { V.cam = null; V.sig = ''; });
     buildStage(); attachStage();
     $('s-playpause').hidden = true; render();
