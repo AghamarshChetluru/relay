@@ -4,7 +4,8 @@
   var M = window.Mesh, UI = window.RelayUI = {};
   var NATIVE = !!window.RELAY_NATIVE, NB = window.RelayNative || {};   // NATIVE: running inside the Android app (real radio, real storage, no simulation)
   var ui = UI.ui = { screen: 'home', seg: 'requests', viewer: null, done: null, form: null, filter: { cat: 'All', area: 'All', help: {} },
-    sheet: null, lastFocus: null, onboard: false, snooze: {}, earlierOpen: false, toolsOpen: false, auto: true };
+    sheet: null, lastFocus: null, onboard: false, snooze: {}, earlierOpen: false, toolsOpen: false, auto: true,
+    search: { open: false, q: '' }, more: {}, read: {}, seen: {}, announced: {}, drafts: { renew: {} }, banner: { q: [], cur: null, timer: null }, refresh: { busy: false, tap: 0, msg: '', tone: '', last: 0 } };
 
   /* ---------- helpers ---------- */
   var ICONS = {
@@ -15,7 +16,7 @@
     pin: 'M12 21s-7-6-7-11a7 7 0 0114 0c0 5-7 11-7 11zM12 12a2 2 0 100-4 2 2 0 000 4z',
     info: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v5M12 8h.01', next: 'M9 6l6 6-6 6', x: 'M6 6l12 12M18 6L6 18', check: 'M5 12l5 5 9-10',
     reset: 'M4 4v6h6M5 14a8 8 0 108-8', mega: 'M3 11v2l12 5V6zM15 8a4 4 0 010 8', image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4M9 9h.01',
-    clock: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', refresh: 'M20 12a8 8 0 01-14 5M4 12a8 8 0 0114-5M18 3v4h-4M6 21v-4h4'
+    clock: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', refresh: 'M20 12a8 8 0 01-14 5M4 12a8 8 0 0114-5M18 3v4h-4M6 21v-4h4', search: 'M11 4a7 7 0 100 14 7 7 0 000-14zM21 21l-5-5'
   };
   function icon(n, cls) {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -55,18 +56,27 @@
   UI.h = h; UI.icon = icon; UI.toast = toast; UI.age = age; UI.pill = pill; UI.clear = clear;
 
   /* ---------- sheets ---------- */
-  function openSheet(title, build) {
-    ui.sheet = { title: title, build: build };
+  function openSheet(title, build, o) {
+    ui.sheet = { title: title, build: build, focusPid: o && o.focusPid || null, focused: false };
     ui.lastFocus = document.activeElement;
-    $('sheet-title').textContent = title; $('sheetroot').hidden = false; refreshSheet();
-    $('sheet').focus();
+    $('sheet-title').textContent = title; $('sheetroot').hidden = false;
+    $('sheet').focus(); refreshSheet();               // focus the dialog first; a message opened for one response then moves focus to that response
   }
   function refreshSheet() {
     if (!ui.sheet) return;
     var b = $('sheetbody'), top = b.scrollTop; clear(b); b.appendChild(ui.sheet.build()); b.scrollTop = top;
+    if (ui.sheet.focusPid) {      // opened for ONE reply (notification, search result): bring exactly that reply into view, once, and keep it marked across redraws
+      var t = b.querySelector('[data-pid="' + ui.sheet.focusPid + '"]');
+      if (t) {
+        t.setAttribute('tabindex', '-1');
+        if (!ui.sheet.focused) { ui.sheet.focused = true; t.classList.add('flash'); try { t.scrollIntoView({ block: 'center' }); t.focus({ preventScroll: true }); } catch (e) {} }
+        else { t.classList.add('flashed'); var ae = document.activeElement; if (!ae || ae === document.body || ae.id === 'sheet') { try { t.focus({ preventScroll: true }); } catch (e) {} } }
+      }
+    }
   }
   function closeSheet() {
     ui.sheet = null; $('sheetroot').hidden = true;
+    if (ui.dirtyRead) { ui.dirtyRead = false; render(); }       // what the person just opened is read now: the lists behind the sheet follow
     if (ui.lastFocus && ui.lastFocus.focus) { try { ui.lastFocus.focus(); } catch (e) {} }
   }
   UI.openSheet = openSheet; UI.refreshSheet = refreshSheet; UI.closeSheet = closeSheet;
@@ -94,6 +104,84 @@
     return M.receivedCases(v).filter(function (c) { return !S().local[v].hidden[c.id]; }).map(info);
   }
   function receivedUpdates(v) { return M.receivedBroadcasts(v).filter(function (p) { return !M.isExpired(p); }); }
+
+  /* ---------- read / unread: what THIS person has opened on THIS phone. It is never sent to anyone and is not an acknowledgment. ---------- */
+  function readSet(v) {
+    if (NATIVE) return NB.read || (NB.read = {});
+    var r = ui.read[v]; if (!r) r = ui.read[v] = (v === S().keys.A ? (load('relay.read') || {}) : {});
+    return r;
+  }
+  function isRead(v, id) { return !!readSet(v)[id]; }
+  function markRead(v, ids) {
+    var rs = readSet(v), fresh = ids.filter(function (id) { return id && !rs[id]; });
+    if (!fresh.length) return false;
+    fresh.forEach(function (id) { rs[id] = true; }); ui.dirtyRead = true;
+    if (NATIVE) NB.markRead(fresh); else if (v === S().keys.A) store('relay.read', rs);
+    return true;
+  }
+  function contentKey(pl) { return ['title', 'description', 'area', 'areaHoodName', 'lastKnown', 'lastContact', 'note', 'category'].map(function (k) { return String(pl[k] || '').trim(); }).join('\u0001'); }
+  /* The packets that can make a case need attention again: the first request, a renewal that actually changed the words, responses to my own request,
+     an acknowledgment of my offer, a resolution notice for a case I answered. A renewal that only extends the time is not news. */
+  function attention(v, rid) {
+    var r = S().requests[rid], out = { keys: [], replyKeys: [], parts: { request: false, updated: false, replies: 0, acks: 0, resolved: false }, last: 0 };
+    if (!r) return out;
+    var inb = S().inbox[v], author = r.authorNodeId === v;
+    function seen(pid) { var t = inb[pid] && inb[pid].tick; if (t > out.last) out.last = t; }
+    var held = r.versions.filter(function (pid) { return inb[pid]; }); held.forEach(seen);
+    if (author) {
+      M.repliesAt(v, rid).forEach(function (p) { if (p.originNodeId === v) return; out.keys.push(p.id); out.replyKeys.push(p.id); out.parts.replies++; seen(p.id); });
+    } else {
+      var prior = null;      // the latest earlier version this phone held or opened: a renewal that only extended the time inherits its read state
+      r.versions.forEach(function (pid) {
+        var heldNow = !!inb[pid], rd = isRead(v, pid); if (!heldNow && !rd) return;
+        var ck = contentKey(S().packets[pid].payload || {}), inherited = !!(prior && prior.ck === ck && prior.read);
+        if (heldNow && !inherited) { out.keys.push(pid); if (prior && prior.ck !== ck) out.parts.updated = true; else out.parts.request = true; }
+        prior = { ck: ck, read: rd || inherited };
+      });
+      var mine = M.myReplies(v, rid);
+      mine.forEach(function (mp) { M.acksAt(v, mp.id).forEach(function (a) { out.keys.push(a.id); out.parts.acks++; out.replyKeys.push(mp.id); seen(a.id); }); });
+      if (mine.length) Object.keys(inb).forEach(function (pid) { var p = S().packets[pid]; if (p && p.type === 'resolve' && p.requestId === rid) { out.keys.push(pid); out.parts.resolved = true; seen(pid); } });
+    }
+    return out;
+  }
+  function unreadKeys(v, att) { return att.keys.filter(function (k) { return !isRead(v, k); }); }
+  function markCaseRead(v, rid) { return markRead(v, attention(v, rid).keys); }
+  function newLabel(i) {
+    var p = i.att.parts, n = unreadKeys(ui.viewer, i.att).length;
+    if (p.replies) return n > 1 ? n + ' new responses' : 'New response';
+    if (p.acks) return 'Offer acknowledged';
+    if (p.resolved) return 'Marked resolved';
+    if (p.updated && !p.request) return 'Request updated';
+    return 'New';
+  }
+  /* One model for the whole inbox: every case carries its attention state, every message lands in exactly ONE group. */
+  function inboxModel(v) {
+    var fl = ui.filter, filt = fl.cat !== 'All' || fl.area !== 'All';
+    var cases = casesFor(v).map(function (i) {
+      i.att = attention(v, i.id); i.unread = unreadKeys(v, i.att).length > 0; i.last = Math.max(i.att.last, i.st.packet.createdTick || 0);
+      i.fits = (fl.cat === 'All' || reqFilterCat(i) === fl.cat) && (fl.area === 'All' || i.hoodId === fl.area); return i;
+    });
+    var ups = M.receivedBroadcasts(v).map(function (p) { return { p: p, unread: p.originNodeId !== v && !isRead(v, p.id), expired: M.isExpired(p), last: S().inbox[v][p.id] ? S().inbox[v][p.id].tick : p.createdTick }; });
+    var shown = cases.filter(function (i) { return i.fits; }), showUps = !filt;
+    var byRecent = function (a, b) { return b.last - a.last; };
+    var fresh = shown.filter(function (i) { return i.unread; }).map(function (i) { return { t: 'r', o: i, last: i.last, u: i.urgent }; })
+      .concat(showUps ? ups.filter(function (u) { return u.unread; }).map(function (u) { return { t: 'u', o: u, last: u.last, u: false }; }) : [])
+      .sort(function (a, b) { return (b.u - a.u) || (b.last - a.last); });
+    return { all: cases, fresh: fresh, filtered: filt,
+      active: sortCases(shown.filter(function (i) { return !i.unread && i.active; })),
+      updates: showUps ? ups.filter(function (u) { return !u.unread && !u.expired; }).sort(byRecent) : [],
+      earlier: shown.filter(function (i) { return !i.unread && !i.active; }).map(function (i) { return { t: 'r', o: i, last: i.last }; })
+        .concat(showUps ? ups.filter(function (u) { return !u.unread && u.expired; }).map(function (u) { return { t: 'u', o: u, last: u.last }; }) : []).sort(byRecent) };
+  }
+  function unreadCounts(v) {
+    var o = { feed: 0, activity: 0 };
+    casesFor(v).forEach(function (i) {
+      var a = attention(v, i.id); if (!unreadKeys(v, a).length) return;
+      o.feed++; if (i.r.authorNodeId === v || M.myReplies(v, i.id).length) o.activity++;
+    });
+    M.receivedBroadcasts(v).forEach(function (p) { if (p.originNodeId !== v && !isRead(v, p.id)) o.feed++; });
+    return o;
+  }
   function nearbyLabel(i) {
     var vh = myHood().id;
     if (!vh || !i.hoodId) return null;
@@ -113,34 +201,45 @@
     });
   }
 
+  function lastText(i) {
+    var created = i.r.createdTick, last = i.last || created;
+    return last > created + 1 ? 'Last activity ' + age(last) : age(created);
+  }
   function requestCard(i, opts) {
     opts = opts || {};
     var v = ui.viewer, view = M.requestView(v, i.id), own = view.author, photo = i.hasPhoto ? M.photoOf(v, i.id) : null, nb = nearbyLabel(i);
-    var action = own ? 'View in activity' : (i.kind === 'missing' ? 'Share a lead' : 'I can help');
+    if (!i.att) { i.att = attention(v, i.id); i.unread = unreadKeys(v, i.att).length > 0; i.last = Math.max(i.att.last, i.st.packet.createdTick || 0); }
+    var firstNewReply = own ? i.att.replyKeys.filter(function (k) { return !isRead(v, k); })[0] : null;
+    var action = own ? (firstNewReply ? 'View response' : 'View in activity') : (i.kind === 'missing' ? 'Share a sighting' : 'View request');
     var thumb = photo && photo.ready ? h('img', { class: 'thumb', src: photo.dataUrl, alt: 'Photo attached to this request' }) : null;
-    var card = h('article', { class: 'card' + (own ? ' mine' : '') + (i.active ? '' : ' past'), 'data-rid': i.id, 'data-state': i.resolved ? 'resolved' : i.expired ? 'expired' : 'active' },
-      h('div', { class: 'cardtop' }, h('div', { class: 'row' }, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.renewed ? pill('Renewed', 'info') : null,
-        (!own && i.active && ui.filter.help[i.category]) ? pill('Matches your skills', 'good') : null), h('span', { class: 'meta' }, age(i.r.createdTick))),
-      h('div', { class: 'cardbody' }, thumb, h('div', { class: 'grow' }, h('h3', {}, i.title), i.desc ? h('p', { class: 'muted clamp' }, i.desc) : null)),
+    var card = h('article', { class: 'card' + (own ? ' mine' : '') + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0', 'data-state': i.resolved ? 'resolved' : i.expired ? 'expired' : 'active' },
+      h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null, i.renewed ? pill('Renewed', 'info') : null,
+        (!own && i.active && ui.filter.help[i.category]) ? pill('Matches your skills', 'good') : null), h('span', { class: 'meta' }, lastText(i))),
+      h('div', { class: 'cardbody' }, thumb, h('div', { class: 'grow' }, h('h3', {}, i.unread ? h('span', { class: 'sr' }, 'Unread. ') : null, i.title), i.desc ? h('p', { class: 'muted clamp' }, i.desc) : null)),
+      opts.snippet ? h('div', { class: 'snip' }, 'Matched in a response: ', h('b', {}, opts.snippet)) : null,
       h('div', { class: 'loc' }, icon('pin', 'sm'), h('span', {}, whereText(i.area, i.hoodName)), nb ? h('span', { class: 'pill ' + (nb === 'Nearby' ? 'good' : 'neutral') }, nb) : null),
       h('div', { class: 'row tags' }, validityPill(i),
         i.hasPhoto ? pill(photo && photo.ready ? 'Photo' : 'Photo on the way', 'neutral') : null, (i.hasPrivate && !own) ? pill('Exact address on request', 'neutral') : null,
         i.kind === 'missing' ? pill('Sighting reports unverified', 'neutral') : null),
       h('div', { class: 'meta small' }, own ? 'Your request' : 'Self-reported · Not verified'),
       h('div', { class: 'cardfoot' }, pill(view.label, view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : view.tone === 'info' ? 'info' : 'neutral'),
-        (i.active || own) ? h('button', { class: 'link', 'aria-label': action + ': ' + i.title, on: { click: function (e) { e.stopPropagation(); if (own) { go('activity'); } else openRequest(i.id); } } }, action, icon('next', 'sm')) : null));
-    card.addEventListener('click', function () { openRequest(i.id); });
+        (i.active || own) ? h('button', { class: 'link', 'aria-label': action + ': ' + i.title, on: { click: function (e) { e.stopPropagation(); if (own && !firstNewReply && !opts.replyPid) { go('activity'); } else openRequest(i.id, { focusPid: opts.replyPid || firstNewReply || null }); } } }, action, icon('next', 'sm')) : null));
+    card.addEventListener('click', function () { openRequest(i.id, { focusPid: opts.replyPid || firstNewReply || null }); });
     return card;
   }
-  function updateCard(p) {
-    var v = ui.viewer, own = p.originNodeId === v, pl = p.payload, left = Math.max(0, p.expiresTick - S().tick);
+  function updateCard(p, opts) {
+    opts = opts || {};
+    var v = ui.viewer, own = p.originNodeId === v, pl = p.payload, left = Math.max(0, p.expiresTick - S().tick), expired = M.isExpired(p), unread = !own && !isRead(v, p.id);
     var status = own ? (M.sentObserved(v, p.id) ? 'Shared with a nearby phone' : 'Saved on this phone') : null, nb = updateNearby(p);
-    return h('article', { class: 'card' + (own ? ' mine' : ''), 'data-pid': p.id },
-      h('div', { class: 'cardtop' }, pill(pl.category, 'info'), h('span', { class: 'meta' }, age(p.createdTick))),
-      h('p', { style: 'margin:10px 0' }, pl.text),
+    var card = h('article', { class: 'card' + (own ? ' mine' : '') + (unread ? ' unread' : '') + (expired ? ' past' : ''), 'data-pid': p.id, 'data-unread': unread ? '1' : '0' },
+      h('div', { class: 'cardtop' }, h('div', { class: 'row' }, unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(pl.category, 'info'), unread ? pill('New', 'info') : null, expired ? pill('Expired', 'warn') : null), h('span', { class: 'meta' }, age(p.createdTick))),
+      h('p', { style: 'margin:10px 0' }, unread ? h('span', { class: 'sr' }, 'Unread. ') : null, pl.text),
       h('div', { class: 'loc' }, icon('pin', 'sm'), h('span', {}, whereText(pl.area, pl.hoodName)), nb ? h('span', { class: 'pill ' + (nb === 'Nearby' ? 'good' : 'neutral') }, nb) : null),
-      h('div', { class: 'meta small' }, pl.category === 'Check-in' ? 'Self-reported' : 'Unverified community post', ' · relevant for ', span(left), ' more'),
-      status ? h('div', { class: 'cardfoot' }, pill(status, 'info')) : null);
+      h('div', { class: 'meta small' }, pl.category === 'Check-in' ? 'Self-reported' : 'Unverified community post', expired ? ' · no longer being passed along' : ' · relevant for ' + span(left) + ' more'),
+      h('div', { class: 'cardfoot' }, status ? pill(status, 'info') : h('span', { class: 'statusword' }, 'Received on this phone'),
+        h('button', { class: 'link', 'aria-label': 'Open update: ' + String(pl.text).slice(0, 40), on: { click: function (e) { e.stopPropagation(); openUpdate(p.id); } } }, 'Open update', icon('next', 'sm'))));
+    card.addEventListener('click', function () { openUpdate(p.id); });
+    return card;
   }
   function updateNearby(p) {
     var vh = myHood().id, ph = p.payload.hood; if (!vh || !ph) return null;
@@ -174,7 +273,7 @@
       el.appendChild(h('button', { class: 'btn primary block', id: 'ob-continue', on: { click: function () {
         if (!st.pick) { st.err = 'Choose where you are to continue.'; draw(); return; }
         if (st.pick === 'other' && !st.other.trim()) { st.err = 'Type your area, or pick one from the list.'; draw(); return; }
-        applyArea(st.pick, st.other); ui.onboard = false; ui.screen = 'home'; render(true); toast('Area saved. Tap the area button at the top to change it.');
+        applyArea(st.pick, st.other); ui.onboard = false; ui.screen = 'home'; render(true); toast('Area saved. Tap the area button at the top to change it.'); if (ui.pendingRef) { var pr = ui.pendingRef; ui.pendingRef = null; openMessage(pr); }
       } } }, 'Continue'));
       el.appendChild(h('p', { class: 'muted small', style: 'margin-top:14px' }, 'Your area stays on this phone. It is shared only as the area you choose to post from.'));
     }
@@ -201,10 +300,15 @@
     var f = ui.form; if (!f) return false;
     return !!(f.text || f.where || f.who || f.desc || f.lastWhere || f.note || f.building || f.directions || f.photo || f.photoBusy);
   }
-  function locationPrompt() {
+  function locationPrompt(compact) {
     var v = ui.viewer, hs = M.hoodState(v);
     if (ui.onboard || ui.screen === 'request' || ui.done || ui.sheet || draftDirty()) return null;     // never interrupt someone making a request
     if (!hs.due || S().tick < (ui.snooze[v] || 0)) return null;
+    if (compact) return h('div', { class: 'locprompt compact', id: 'loc-prompt', role: 'group', 'aria-label': 'Confirm your area' },
+      h('strong', {}, 'Still in ' + hs.name + '?'),
+      h('button', { class: 'btn sm primary', id: 'loc-yes', on: { click: function () { M.confirmHood(v); render(); toast('Thanks. Area confirmed.'); } } }, 'Yes'),
+      h('button', { class: 'btn sm', id: 'loc-moved', on: { click: openArea } }, 'I moved'),
+      h('button', { class: 'btn sm', id: 'loc-later', 'aria-label': 'Not now', on: { click: function () { ui.snooze[v] = S().tick + 10; render(); } } }, 'Later'));
     return h('div', { class: 'locprompt', id: 'loc-prompt', role: 'group', 'aria-label': 'Confirm your area' },
       h('strong', {}, 'Are you still in ' + hs.name + '?'), h('span', { class: 'muted small' }, 'Confirming helps requests reach the right people.'),
       h('div', { class: 'stack' },
@@ -399,51 +503,120 @@
         h('button', { class: 'btn block', on: { click: function () { ui.done = null; render(); } } }, 'Make another request')));
   }
 
-  /* ---------- Feed ---------- */
+  /* ---------- Inbox (the Feed screen): New to you / Active help requests / Community updates / Earlier messages, plus search ---------- */
   function screenFeed() {
-    var v = ui.viewer, el = h('div', {}), reqs = ui.seg === 'requests', lp = locationPrompt();
+    var v = ui.viewer, el = h('div', {}), inbox = ui.seg === 'requests', lp = locationPrompt(true);
     if (lp) el.appendChild(lp);
-    el.appendChild(h('h1', {}, reqs ? 'Help others' : 'Community updates'));
-    el.appendChild(h('p', { class: 'sub' }, reqs ? 'Requests your phone has actually received. Respond where your time and abilities can make a difference.'
-      : 'Short local updates received on this phone. Messages travel through the same offline relay network.'));
+    el.appendChild(h('div', { class: 'titlerow' }, h('h1', {}, inbox ? 'Inbox' : 'Community updates'),
+      inbox ? h('button', { class: 'iconbtn', id: 'btn-search', 'aria-label': 'Search messages on this phone', 'aria-expanded': String(ui.search.open), 'aria-controls': 'inbox-search',
+        on: { click: function () { ui.search.open = !ui.search.open; if (!ui.search.open) ui.search.q = ''; render(); if (ui.search.open) { var f = $('inbox-search'); if (f) f.focus(); } } } }, icon('search')) : null));
+    if (!inbox) el.appendChild(h('p', { class: 'sub' }, 'Short local updates received on this phone. Messages travel through the same offline relay network.'));
     el.appendChild(h('div', { class: 'seg', role: 'tablist', 'aria-label': 'Feed' },
-      h('button', { id: 'seg-requests', role: 'tab', 'aria-selected': String(reqs), on: { click: function () { ui.seg = 'requests'; render(); } } }, 'Help requests'),
-      h('button', { id: 'seg-updates', role: 'tab', 'aria-selected': String(!reqs), on: { click: function () { ui.seg = 'updates'; render(); } } }, 'Community updates')));
-    if (reqs) feedRequests(el, v); else feedUpdates(el, v);
+      h('button', { id: 'seg-requests', role: 'tab', 'aria-selected': String(inbox), on: { click: function () { ui.seg = 'requests'; render(); } } }, 'Inbox'),
+      h('button', { id: 'seg-updates', role: 'tab', 'aria-selected': String(!inbox), on: { click: function () { ui.seg = 'updates'; render(); } } }, 'Community updates')));
+    if (inbox) feedInbox(el, v); else feedUpdates(el, v);
     return el;
   }
-  function feedRequests(el, v) {
-    var all = casesFor(v), fl = ui.filter;
-    el.appendChild(h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter by type', style: 'margin-bottom:10px' },
-      ['All', 'Medical', 'Rescue', 'Missing', 'Food & water', 'Shelter'].map(function (c) {
-        return h('button', { class: 'chip', 'data-filter': c, 'aria-pressed': String(fl.cat === c), on: { click: function () { fl.cat = c; render(); } } }, c); })));
+  function norm(x) { return String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function searchTerms(q) { var n = norm(q); return n ? n.split(' ') : []; }
+  function hasAll(text, terms) { return terms.every(function (t) { return text.indexOf(t) >= 0; }); }
+  function caseText(i) {
+    var pl = i.pl; return norm([pl.title, pl.description, pl.category, i.kind === 'missing' ? 'missing person' : '', pl.area, pl.areaHoodName, pl.lastKnown, pl.lastContact, pl.note, pl.hoodName].join(' '));
+  }
+  function repliesVisible(v, rid) { var r = S().requests[rid]; return r && r.authorNodeId === v ? M.repliesAt(v, rid).filter(function (p) { return p.originNodeId !== v; }) : M.myReplies(v, rid); }
+  /* Searches only what this phone holds: titles, descriptions, categories, areas, last-known places, notes and the response text it can show. No index, no network. */
+  function searchInbox(v, q, m) {
+    var terms = searchTerms(q), out = [];
+    if (!terms.length) return out;
+    m.all.forEach(function (i) {
+      if (!i.fits) return;
+      var main = caseText(i), mainHit = hasAll(main, terms), rp = null;
+      if (!mainHit) {
+        var reps = repliesVisible(v, i.id), combined = main + ' ' + reps.map(function (p) { return norm(p.payload.note + ' ' + (p.payload.area || '')); }).join(' ');
+        if (!hasAll(combined, terms)) return;
+        rp = reps.filter(function (p) { return hasAll(norm(p.payload.note + ' ' + (p.payload.area || '')), terms); })[0] || reps.filter(function (p) { return terms.some(function (t) { return norm(p.payload.note + ' ' + (p.payload.area || '')).indexOf(t) >= 0; }); })[0] || null;
+      }
+      out.push({ t: 'r', o: i, title: hasAll(norm(i.title), terms) ? 1 : 0, reply: rp, last: i.last });
+    });
+    if (!m.filtered) M.receivedBroadcasts(v).forEach(function (p) {
+      var pl = p.payload; if (hasAll(norm([pl.text, pl.category, pl.area, pl.hoodName].join(' ')), terms)) out.push({ t: 'u', o: p, title: 0, last: S().inbox[v][p.id] ? S().inbox[v][p.id].tick : p.createdTick });
+    });
+    return out.sort(function (a, b) { return (b.title - a.title) || ((b.t === 'r' && b.o.active ? 1 : 0) - (a.t === 'r' && a.o.active ? 1 : 0)) || (b.last - a.last); });
+  }
+  function more(key, list, limit, build, box, label) {
+    var n = ui.more[key] ? list.length : Math.min(list.length, limit);
+    list.slice(0, n).forEach(function (x) { box.appendChild(build(x)); });
+    if (list.length > limit) box.appendChild(h('div', { class: 'moreRow' }, h('button', { class: 'btn sm', 'data-more': key, 'aria-expanded': String(!!ui.more[key]), on: { click: function () { ui.more[key] = !ui.more[key]; renderInboxBody(); } } },
+      ui.more[key] ? 'Show fewer' : 'Show ' + (list.length - limit) + ' more ' + (label || ''))));
+  }
+  function inboxItemCard(x) { return x.t === 'r' ? requestCard(x.o, { replyPid: x.reply ? x.reply.id : null, snippet: x.reply ? snippetOf(x.reply.payload.note) : null }) : updateCard(x.o.p || x.o); }
+  function snippetOf(t) { t = String(t || ''); var q = searchTerms(ui.search.q)[0], k = q ? t.toLowerCase().indexOf(q) : -1, st = Math.max(0, k - 30); return (st ? '…' : '') + t.slice(st, st + 90) + (t.length > st + 90 ? '…' : ''); }
+  function gsect(title, count, meta) { return h('div', { class: 'gsect' }, h('h2', {}, title + (count != null ? ' (' + count + ')' : '')), meta ? h('span', { class: 'meta' }, meta) : null); }
+
+  function fillInbox(body) {
+    var v = ui.viewer, m = inboxModel(v), q = ui.search.q, fl = ui.filter;
+    clear(body);
+    if (!m.all.length && !M.receivedBroadcasts(v).length) {
+      body.appendChild(h('div', { class: 'empty', id: 'empty-requests' }, h('strong', {}, 'No requests received yet'),
+        'Requests show up here only after they travel from phone to phone to reach you. Nothing is shown from phones you are not connected to.',
+        h('div', { class: 'stack' }, h('button', { class: 'btn primary block', on: { click: function () { go('request'); } } }, 'Request help'))));
+      return;
+    }
+    if (ui.search.open && searchTerms(q).length) {                       // search replaces the grouped view: matches in active AND earlier messages
+      var res = searchInbox(v, q, m);
+      body.appendChild(h('div', { class: 'meta', id: 'search-count', role: 'status', style: 'margin:0 0 8px' }, res.length ? res.length + (res.length === 1 ? ' message' : ' messages') + ' on this phone match “' + q.trim() + '”' : ''));
+      if (!res.length) { body.appendChild(h('div', { class: 'empty', id: 'empty-search' }, h('strong', {}, 'No matching messages on this phone.'), 'Relay can only search messages that have reached this phone.')); return; }
+      more('search', res, 12, inboxItemCard, body, 'matches');
+      return;
+    }
+    if (!m.fresh.length && !m.active.length && !m.updates.length && !m.earlier.length) {
+      body.appendChild(h('div', { class: 'empty' }, h('strong', {}, 'No messages match these filters'), h('button', { class: 'btn', on: { click: function () { fl.cat = 'All'; fl.area = 'All'; fl.help = {}; render(); } } }, 'Clear filters')));
+      return;
+    }
+    if (m.fresh.length) { body.appendChild(gsect('New to you', m.fresh.length, 'Not opened yet')); var nb = h('div', { id: 'grp-new' }); body.appendChild(nb); more('new', m.fresh, 4, inboxItemCard, nb, 'new'); }
+    body.appendChild(gsect('Active help requests', m.active.length));
+    var ab = h('div', { id: 'grp-active' }); body.appendChild(ab);
+    if (!m.active.length) ab.appendChild(h('div', { class: 'empty', id: 'empty-active' }, h('strong', {}, 'No active requests right now'), m.fresh.length || m.earlier.length ? 'Other messages are listed above and below.' : 'Nothing is waiting for you.'));
+    else more('active', m.active, 5, function (i) { return requestCard(i); }, ab, 'requests');
+    if (!m.filtered) {
+      body.appendChild(gsect('Community updates', m.updates.length, m.updates.length ? 'Recent' : ''));
+      var ub = h('div', { id: 'grp-updates' }); body.appendChild(ub);
+      if (!m.updates.length) ub.appendChild(h('div', { class: 'empty', id: 'empty-updates' }, h('strong', {}, 'No community updates received yet'), 'Updates appear only after they travel to this phone.'));
+      else more('updates', m.updates, 3, function (u) { return updateCard(u.p); }, ub, 'updates');
+    } else body.appendChild(h('div', { class: 'help' }, 'Filters apply to help requests. Clear them to see community updates.'));
+    if (m.earlier.length) {
+      var d = h('details', { class: 'earlier', id: 'earlier' }, h('summary', {}, 'Earlier messages (' + m.earlier.length + ') · expired, resolved or older'));
+      if (ui.earlierOpen) d.setAttribute('open', ''); d.addEventListener('toggle', function () { ui.earlierOpen = d.open; });
+      more('earlier', m.earlier, 5, inboxItemCard, d, 'earlier messages'); body.appendChild(d);
+    }
+  }
+  function renderInboxBody() { var b = $('inbox-body'); if (b) { var y = $('screen').scrollTop; fillInbox(b); $('screen').scrollTop = y; } }
+  function feedInbox(el, v) {
+    var fl = ui.filter;
+    if (ui.search.open) {
+      var inp = h('input', { type: 'search', id: 'inbox-search', placeholder: 'Search title, place, text or responses', 'aria-label': 'Search messages on this phone', value: ui.search.q, autocomplete: 'off', enterkeyhint: 'search' });
+      inp.addEventListener('input', function () { ui.search.q = inp.value; ui.more.search = false; renderInboxBody(); });
+      el.appendChild(h('div', { class: 'searchbox', role: 'search' }, inp, h('button', { class: 'btn sm', id: 'search-clear', on: { click: function () { ui.search.q = ''; ui.search.open = false; render(); $('btn-search') && $('btn-search').focus(); } } }, 'Done')));
+    }
     var skills = Object.keys(fl.help).filter(function (k) { return fl.help[k]; });
-    var det = h('details', { class: 'card', style: 'padding:0 14px' }, h('summary', { style: 'min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer' }, 'Neighbourhood and abilities' + (fl.area !== 'All' || skills.length ? ' · active' : '')),
+    var summary = (fl.cat === 'All' ? 'All types' : fl.cat) + ' · ' + (fl.area === 'All' ? 'all areas' : hoodName(fl.area)) + (skills.length ? ' · I can help: ' + skills.join(', ') : '');
+    var det = h('details', { class: 'card filters', id: 'filters', style: 'padding:0 14px;margin-bottom:6px' }, h('summary', { style: 'min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer;gap:8px' }, 'Filters', h('span', { class: 'muted small', style: 'font-weight:500' }, summary)),
       h('div', { style: 'padding-bottom:12px' },
+        h('div', { class: 'chips', role: 'group', 'aria-label': 'Filter by type', style: 'margin-bottom:12px' },
+          ['All', 'Medical', 'Rescue', 'Missing', 'Food & water', 'Shelter'].map(function (c) {
+            return h('button', { class: 'chip', 'data-filter': c, 'aria-pressed': String(fl.cat === c), on: { click: function () { fl.cat = c; render(); } } }, c); })),
         h('div', { class: 'field' }, h('label', { for: 'f-area' }, 'Reported neighbourhood'), (function () {
-          var s = h('select', { id: 'f-area', on: { change: function (e) { fl.area = e.target.value; render(); } } }, h('option', { value: 'All' }, 'All neighbourhoods'),
-            M.NEIGHBORHOODS.map(function (n) { return h('option', { value: n.id }, n.name); })); s.value = fl.area; return s; })(),
-          h('div', { class: 'help' }, 'Filters only change what you see here. Your phone still passes requests along, whatever you filter.')),
+          var sel = h('select', { id: 'f-area', on: { change: function (e) { fl.area = e.target.value; render(); } } }, h('option', { value: 'All' }, 'All neighbourhoods'),
+            M.NEIGHBORHOODS.map(function (n) { return h('option', { value: n.id }, n.name); })); sel.value = fl.area; return sel; })(),
+          h('div', { class: 'help' }, 'Filters only change what you see here. Your phone still passes requests along, whatever you filter or search.')),
         h('div', { class: 'field', style: 'margin-bottom:0' }, h('span', { class: 'label', id: 'lbl-help' }, 'I can help with (optional)'),
           h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'lbl-help' }, ['Medical', 'Rescue', 'Food & water', 'Shelter'].map(function (c) {
             return h('button', { class: 'chip', 'data-help': c, 'aria-pressed': String(!!fl.help[c]), on: { click: function () { fl.help[c] = !fl.help[c]; render(); } } }, c); })),
           h('div', { class: 'help' }, 'Self-described. Matching requests are listed first; nothing is verified.'))));
-    if (fl.area !== 'All' || skills.length) det.setAttribute('open', '');
+    if (ui.filtersOpen || fl.area !== 'All' || skills.length) det.setAttribute('open', '');
+    det.addEventListener('toggle', function () { ui.filtersOpen = det.open; });
     el.appendChild(det);
-    var fil = all.filter(function (i) { return (fl.cat === 'All' || reqFilterCat(i) === fl.cat) && (fl.area === 'All' || i.hoodId === fl.area); });
-    var act = sortCases(fil.filter(function (i) { return i.active; })), past = fil.filter(function (i) { return !i.active; }).sort(function (a, b) { return b.st.packet.createdTick - a.st.packet.createdTick; });
-    if (!all.length) el.appendChild(h('div', { class: 'empty', id: 'empty-requests' }, h('strong', {}, 'No requests received yet'),
-      'Requests show up here only after they travel from phone to phone to reach you. Nothing is shown from phones you are not connected to.',
-      h('div', { class: 'stack' }, h('button', { class: 'btn primary block', on: { click: function () { go('request'); } } }, 'Request help'))));
-    else if (!fil.length) el.appendChild(h('div', { class: 'empty' }, h('strong', {}, 'No requests match these filters'),
-      h('button', { class: 'btn', on: { click: function () { fl.cat = 'All'; fl.area = 'All'; fl.help = {}; render(); } } }, 'Clear filters')));
-    else if (!act.length) el.appendChild(h('div', { class: 'empty', id: 'empty-active' }, h('strong', {}, 'No active requests right now'), 'Earlier requests are listed below.'));
-    act.forEach(function (i) { el.appendChild(requestCard(i)); });
-    if (past.length) {
-      var d = h('details', { class: 'earlier', id: 'earlier' }, h('summary', {}, 'Expired or resolved (' + past.length + ')'));
-      if (ui.earlierOpen) d.setAttribute('open', ''); d.addEventListener('toggle', function () { ui.earlierOpen = d.open; });
-      past.forEach(function (i) { d.appendChild(requestCard(i)); }); el.appendChild(d);
-    }
+    var body = h('div', { id: 'inbox-body', style: 'margin-top:4px' }); el.appendChild(body); fillInbox(body);
   }
   function feedUpdates(el, v) {
     el.appendChild(h('div', { class: 'card', style: 'background:#fafcff' }, h('div', { class: 'row' }, h('span', { class: 'mark', style: 'width:32px;height:32px;flex-basis:32px;border-radius:50%;font-size:12px;font-weight:800' }, 'ME'), h('strong', {}, 'Share with nearby people')),
@@ -454,11 +627,11 @@
       function sc(p) { return vh && p.payload.hood && M.nearby(vh, p.payload.hood) ? 1 : 0; }
       return sc(b) - sc(a) || b.createdTick - a.createdTick || (+b.id.slice(1)) - (+a.id.slice(1));
     });
-    if (!ups.length) el.appendChild(h('div', { class: 'empty', id: 'empty-updates' }, h('strong', {}, 'No community updates received yet'), 'Updates appear only after they travel to this phone. Urgent requests are always passed along first, and updates fade after 45 minutes.'));
+    if (!ups.length) el.appendChild(h('div', { class: 'empty', id: 'empty-updates' }, h('strong', {}, 'No community updates received yet'), 'Updates appear only after they travel to this phone. Urgent requests are always passed along first.'));
     ups.forEach(function (p) { el.appendChild(updateCard(p)); });
   }
   function openComposer() {
-    var st = { text: '', cat: 'Community', area: '', err: '' };
+    var st = ui.drafts.composer || (ui.drafts.composer = { text: '', cat: 'Community', area: '', err: '' });   // survives another sheet being opened on top (a notification, a search result)
     openSheet('Post an update', function () {
       var ta = h('textarea', { id: 'c-text', maxlength: String(M.MAX_BROADCAST + 40), placeholder: 'e.g. Water collection point open near the market' }, st.text);
       var cnt = h('div', { class: 'counter', id: 'c-count' }, st.text.length + ' / ' + M.MAX_BROADCAST);
@@ -469,7 +642,7 @@
         e.preventDefault();
         var res = M.createBroadcast(ui.viewer, { text: st.text, category: st.cat, area: st.area.trim() });
         if (!res.ok) { st.err = res.error; refreshSheet(); return; }
-        closeSheet(); ui.screen = 'feed'; ui.seg = 'updates'; render(); toast('Saved on this phone. It reaches others only as it travels.');
+        ui.drafts.composer = null; closeSheet(); ui.screen = 'feed'; ui.seg = 'updates'; render(); toast('Saved on this phone. It reaches others only as it travels.');
       } } },
         h('div', { class: 'field' }, h('label', { for: 'c-text' }, 'What would you like to share?'), ta, cnt, st.err ? h('div', { class: 'err', role: 'alert' }, st.err) : null),
         h('div', { class: 'field' }, h('span', { class: 'label', id: 'lbl-bc' }, 'Category'), h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'lbl-bc' },
@@ -483,7 +656,7 @@
 
   /* ---------- Activity ---------- */
   function screenActivity() {
-    var v = ui.viewer, el = h('div', {}), lp = locationPrompt();
+    var v = ui.viewer, el = h('div', {}), lp = locationPrompt(true);
     if (lp) el.appendChild(lp);
     el.appendChild(h('h1', {}, 'My activity'));
     el.appendChild(h('p', { class: 'sub' }, 'Updates depend on messages that have actually reached your phone.'));
@@ -492,8 +665,10 @@
     var posts = M.receivedBroadcasts(v).filter(function (p) { return p.originNodeId === v; }).reverse();
     if (!mine.length && !sent.length && !posts.length) el.appendChild(h('div', { class: 'empty', id: 'empty-activity' }, h('strong', {}, 'No activity yet'), 'Requests, offers and updates you create on this phone appear here.',
       h('div', { class: 'stack' }, h('button', { class: 'btn primary block', on: { click: function () { go('request'); } } }, 'Request help'), h('button', { class: 'btn block', on: { click: function () { ui.seg = 'requests'; go('feed'); } } }, 'Help others'))));
-    if (mine.length) el.appendChild(h('div', { class: 'sect' }, h('h2', {}, 'My requests')));
-    mine.forEach(function (i) {
+    cs.forEach(function (i) { i.att = attention(v, i.id); i.unread = unreadKeys(v, i.att).length > 0; i.last = Math.max(i.att.last, i.st.packet.createdTick || 0); });
+    var needs = mine.filter(function (i) { return i.unread; }).concat(sent.filter(function (i) { return i.unread; })), mine0 = mine, sent0 = sent;
+    mine = mine.filter(function (i) { return !i.unread; }); sent = sent.filter(function (i) { return !i.unread; });
+    function myCard(i) {
       var view = M.requestView(v, i.id), reps = M.repliesAt(v, i.id), shared = M.sentObserved(v, i.st.packet.id), res = i.resolved;
       var acked = reps.filter(function (p) { return M.ackedBy(v, p.id); }).length, canRenew = i.expired && !res;
       var steps = h('ul', { class: 'steps' },
@@ -504,21 +679,25 @@
         i.expired ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Stopped being passed along', h('small', {}, 'Your original request stays here.'))) : null,
         i.renewed ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Renewed ' + i.st.version + (i.st.version === 1 ? ' time' : ' times'), h('small', {}, 'Same case, updated details.'))) : null,
         res ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Marked resolved on this phone')) : null);
-      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past'), 'data-rid': i.id }, h('div', { class: 'cardtop' }, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), pill(view.label, view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : 'info')),
+      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(view.label, view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : 'info')),
         h('h3', {}, i.title), h('div', { class: 'meta' }, icon('pin', 'sm'), h('span', {}, (i.area ? i.area + ' · ' : '') + i.hoodName + ' · Created ' + age(i.r.createdTick))),
         h('div', { class: 'row tags' }, validityPill(i)), steps,
         view.note ? h('div', { class: 'help', style: 'margin:0 0 8px' }, view.note) : null,
         h('div', { class: 'stack' },
           canRenew ? h('button', { class: 'btn primary block', 'data-act': 'renew', on: { click: function () { openRenew(i.id); } } }, icon('refresh', 'sm'), 'Renew request') : null,
-          h('button', { class: 'btn ' + (reps.length && !acked ? 'primary' : 'soft') + ' block', on: { click: function () { openRequest(i.id); } } }, reps.length && !acked ? 'Review offer' : 'Open request'))));
-    });
-    if (sent.length) el.appendChild(h('div', { class: 'sect' }, h('h2', {}, 'Offers I sent')));
-    sent.forEach(function (i) {
+          h('button', { class: 'btn ' + ((reps.length && !acked) || i.unread ? 'primary' : 'soft') + ' block', on: { click: function () { openRequest(i.id, { focusPid: i.att.replyKeys.filter(function (k) { return !isRead(v, k); })[0] || null }); } } }, i.unread && i.att.parts.replies ? 'View response' : reps.length && !acked ? 'Review offer' : 'Open request'))));
+    }
+    function sentCard(i) {
       var view = M.requestView(v, i.id);
-      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past'), 'data-rid': i.id }, h('div', { class: 'cardtop' }, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), pill(view.label, view.tone === 'ok' ? 'good' : 'info')),
+      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(view.label, view.tone === 'ok' ? 'good' : 'info')),
         h('h3', {}, i.title), h('div', { class: 'row tags' }, validityPill(i)), view.note ? h('div', { class: 'help' }, view.note) : null,
-        h('button', { class: 'btn soft block', style: 'margin-top:10px', on: { click: function () { openRequest(i.id); } } }, 'Open request')));
-    });
+        h('button', { class: 'btn soft block', style: 'margin-top:10px', on: { click: function () { openRequest(i.id, { focusPid: i.att.replyKeys.filter(function (k) { return !isRead(v, k); })[0] || null }); } } }, 'Open request')));
+    }
+    if (needs.length) { el.appendChild(h('div', { class: 'sect', id: 'needs-attention' }, h('h2', {}, 'Needs your attention (' + needs.length + ')'))); needs.forEach(function (i) { if (i.r.authorNodeId === v) myCard(i); else sentCard(i); }); }
+    if (mine.length) el.appendChild(h('div', { class: 'sect' }, h('h2', {}, 'My requests')));
+    mine.forEach(myCard);
+    if (sent.length) el.appendChild(h('div', { class: 'sect' }, h('h2', {}, 'Offers I sent')));
+    sent.forEach(sentCard);
     if (posts.length) el.appendChild(h('div', { class: 'sect' }, h('h2', {}, 'My updates')));
     posts.forEach(function (p) { el.appendChild(updateCard(p)); });
     el.appendChild(h('div', { class: 'note' }, 'An offer is not proof that help has arrived, and a message marked as sent is not proof it was received.'));
@@ -526,14 +705,41 @@
   }
 
   /* ---------- Request detail sheet ---------- */
-  function openRequest(rid) {
+  function openRequest(rid, o) {
     var r = S().requests[rid];
-    openSheet(r.kind === 'missing' ? 'Missing person' : 'Request for help', function () { return requestSheet(rid); });
+    if (!r || !M.caseState(ui.viewer, rid)) { missingMessage(); return; }
+    openSheet(r.kind === 'missing' ? 'Missing person' : 'Request for help', function () { return requestSheet(rid); }, o);
+  }
+  function openUpdate(pid) {
+    var p = S().packets[pid];
+    if (!p || p.type !== 'broadcast' || !S().inbox[ui.viewer][pid]) { missingMessage(); return; }
+    openSheet('Community update', function () { return updateSheet(pid); }, null);
+  }
+  function updateSheet(pid) {
+    var v = ui.viewer, p = S().packets[pid], el = h('div', {});
+    if (!p) return h('div', { class: 'empty' }, 'This update is no longer on this phone.');
+    var pl = p.payload, own = p.originNodeId === v, expired = M.isExpired(p), left = Math.max(0, p.expiresTick - S().tick);
+    if (!own) markRead(v, [pid]);            // opened by the person, in this sheet: now it is read (on this phone only)
+    el.appendChild(h('div', { class: 'row' }, pill(pl.category, 'info'), expired ? pill('Expired', 'warn') : pill('Relevant for ' + span(left) + ' more', 'neutral'), h('span', { class: 'meta' }, age(p.createdTick))));
+    el.appendChild(h('p', { style: 'font-size:17px;margin:12px 0' }, pl.text));
+    el.appendChild(h('div', { class: 'details' }, drow('Where', whereText(pl.area, pl.hoodName)), drow('Posted', age(p.createdTick)),
+      drow('Status', expired ? 'Expired. It is no longer being passed along, but it stays here.' : 'Still being passed along'),
+      drow('On this phone', own ? (M.sentObserved(v, p.id) ? 'Shared with a nearby phone' : 'Saved on this phone') : 'Received')));
+    el.appendChild(h('div', { class: 'note' }, own ? 'You wrote this update. Saving is not the same as delivery.' : 'Unverified community post. Opening it only marks it read here: the sender is not told.'));
+    return el;
+  }
+  function missingMessage() {
+    openSheet('Message not on this phone', function () {
+      return h('div', {}, h('p', {}, 'That message is no longer stored on this phone. Relay only keeps messages for a limited time after they expire, so it may have been cleared.'),
+        h('button', { class: 'btn primary block', id: 'missing-back', on: { click: function () { closeSheet(); ui.seg = 'requests'; go('feed'); } } }, 'Back to inbox'));
+    }, null);
+    toast('That message is no longer on this phone.');
   }
   function drow(label, value) { return h('div', { class: 'drow' }, h('span', { class: 'dl' }, label), h('span', { class: 'dv' }, value)); }
   function requestSheet(rid) {
     var r = S().requests[rid], v = ui.viewer, cs = M.caseState(v, rid), el = h('div', {});
     if (!cs) return h('div', { class: 'empty' }, 'This request has not reached this phone.');
+    markCaseRead(v, rid);                    // the person opened this case: its new request/response/acknowledgment are now read ON THIS PHONE (no packet is sent)
     var i = info({ id: rid, r: r, pkt: cs.packet, payload: cs.payload, state: cs }), view = M.requestView(v, rid), pl = cs.payload, resolved = cs.resolved;
     el.appendChild(h('div', { class: 'row' }, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), validityPill(i), i.renewed ? pill('Renewed', 'info') : null, h('span', { class: 'meta' }, age(r.createdTick))));
     el.appendChild(h('h3', { style: 'font-size:19px' }, i.title));
@@ -586,7 +792,7 @@
     } else {
       M.myReplies(v, rid).forEach(function (p) {
         var acks = M.acksAt(v, p.id);
-        el.appendChild(h('div', { class: 'offer mine' }, h('strong', {}, p.payload.kind === 'sighting' ? 'Your possible sighting · Unverified' : 'Your offer · Unverified'), h('p', { style: 'margin:6px 0' }, p.payload.note),
+        el.appendChild(h('div', { class: 'offer mine', 'data-pid': p.id }, h('strong', {}, p.payload.kind === 'sighting' ? 'Your possible sighting · Unverified' : 'Your offer · Unverified'), h('p', { style: 'margin:6px 0' }, p.payload.note),
           h('div', { class: 'help' }, acks.length ? 'The requester acknowledged this. That does not confirm anyone was helped.' : 'You will only be told if the requester acknowledges it.')));
       });
       if (!resolved && !i.expired) el.appendChild(replyForm(r, v));
@@ -617,7 +823,7 @@
   /* ---------- Renew / update ---------- */
   function openRenew(rid) {
     var r = S().requests[rid], cs = M.caseState(ui.viewer, rid), pl = cs.payload, missing = r.kind === 'missing';
-    var st = { desc: pl.description || '', validity: pl.validity, targets: (pl.targets || []).slice(), err: '' };
+    var st = ui.drafts.renew[rid] || (ui.drafts.renew[rid] = { desc: pl.description || '', validity: pl.validity, targets: (pl.targets || []).slice(), err: '' });
     if (!M.VALIDITY.urgentOptions.some(function (m) { return m === st.validity; })) st.validity = M.VALIDITY.urgentDefault;
     openSheet(missing ? 'Update missing-person request' : 'Renew request', function () {
       var el = h('div', {});
@@ -641,7 +847,7 @@
         if (missing) { patch.targets = st.targets; }
         var x = M.renewRequest(ui.viewer, rid, patch);
         if (!x.ok) { st.err = x.error; refreshSheet(); return; }
-        closeSheet(); render(); toast('Renewed. It is going out again as an update to the same request.');
+        ui.drafts.renew[rid] = null; closeSheet(); render(); toast('Renewed. It is going out again as an update to the same request.');
       } } }, missing ? 'Send updated request' : 'Renew request'));
       return el;
     });
@@ -691,6 +897,13 @@
     box.appendChild(h('button', { class: 'btn soft block', id: 'diag-share', on: { click: function () { var o = NB.shareDiagnostics(); if (!o.ok) toast(o.error || 'Could not share'); } } }, 'Share diagnostic log'));
     return box;
   }
+  function popupRow() {
+    return h('div', { class: 'field', id: 'popup-setting', style: 'margin-top:12px' }, h('span', { class: 'label', id: 'lbl-popups' }, 'In-app pop-ups'),
+      h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'lbl-popups' },
+        h('button', { type: 'button', class: 'chip', id: 'popups-important', 'aria-pressed': String(ui.popups !== 'off'), on: { click: function () { ui.popups = 'important'; store('relay.popups', 'important'); refreshSheet(); } } }, 'Important only'),
+        h('button', { type: 'button', class: 'chip', id: 'popups-off', 'aria-pressed': String(ui.popups === 'off'), on: { click: function () { ui.popups = 'off'; store('relay.popups', 'off'); hideBanner(); ui.banner.q = []; refreshSheet(); } } }, 'Off')),
+      h('div', { class: 'help' }, 'Important: a response to your request, an acknowledgment of your offer, an urgent request in or next to your area, a missing-person search aimed at your area. Everything else waits quietly in your inbox. Android alerts when Relay is closed are separate.'));
+  }
   function openAboutNative() {
     var shared = null;
     openSheet('About Relay', function () {
@@ -702,6 +915,10 @@
         drow('Can be found by others', r.canAdvertise ? 'Yes' : 'No (can only look for others)'), drow('Phones seen (2 min)', String((r.recentPeers || []).length)),
         drow('Last exchange', r.lastContactMs ? age(Math.floor(r.lastContactMs / 60000)) : 'None yet'), drow('This phone', NB.me ? NB.me.slice(0, 8) : ''),
         r.lastError ? drow('Last problem', r.lastError) : null));
+      el.appendChild(popupRow());
+      var nst = NB.notifications ? NB.notifications() : { enabled: false, canAsk: false };
+      el.appendChild(h('div', { class: 'details', id: 'notif-details', style: 'margin-top:8px' }, drow('Alerts when Relay is closed', nst.enabled ? 'On. Tapping one opens that message.' : 'Off. In-app banners still work.')));
+      if (!nst.enabled) el.appendChild(h('button', { class: 'btn soft block', id: 'notif-enable', style: 'margin-top:8px', on: { click: function () { if (nst.canAsk) NB.requestNotifications(); else NB.openNotificationSettings(); } } }, 'Turn on alerts'));
       if (r.diag) el.appendChild(fieldDiagnostics(r));      // clearly marked, collapsed by default: normal users never need it
       var stack = h('div', { class: 'stack', style: 'margin-top:10px' });
       if (s.action) stack.appendChild(h('button', { class: 'btn primary block', id: 'about-action', on: { click: s.action[1] } }, s.action[0]));
@@ -725,7 +942,7 @@
     var K = S().keys;
     return ['A', 'M', 'S', 'L', 'C', 'E'].map(function (k) { return { key: k, id: K[k], label: PERSONA_NAMES[k], area: S().nodes[K[k]].hoodName }; });
   }
-  function setViewer(id) { ui.viewer = id; ui.done = null; ui.form = newForm(); lastSig = signature(); lastCounts = { v: id, c: counts(id) }; render(true); }
+  function setViewer(id) { ui.viewer = id; ui.done = null; ui.form = newForm(); ui.seen[id] = null; hideBanner(); ui.banner.q = []; arrivalsSimulated(id); lastSig = signature(); lastCounts = { v: id, c: counts(id) }; render(true); }
   function skipMinutes(n) { for (var i = 0; i < n; i++) M.step(); toast('Skipped ahead ' + n + ' minutes.'); afterTick(true); }
   function openAbout(showTools) {
     if (NATIVE) { openAboutNative(); return; }
@@ -737,6 +954,7 @@
         h('li', {}, 'Missing-person requests are steered toward the last known neighbourhood, with detours if the direct way is blocked.'),
         h('li', {}, 'Offers, sightings and community updates are unverified.'), h('li', {}, 'Saved is not shared, and shared is not received.'),
         h('li', {}, 'Urgent requests stay active for the time you choose (30 min, 1 h or 2 h); missing-person requests for 24 h; community updates for 45 min. You can renew a request.')));
+      el.appendChild(popupRow());
       var det = h('details', { class: 'card', id: 'demo-tools', style: 'padding:0 14px' }, h('summary', { style: 'min-height:48px;display:flex;align-items:center;font-weight:700;cursor:pointer' }, 'Prototype tools (for reviewers)'),
         h('div', { style: 'padding-bottom:14px' },
           h('p', { class: 'muted small' }, 'Try the app as different people. Each phone only sees messages that have reached it.'),
@@ -757,6 +975,122 @@
       return el;
     });
   }
+
+  /* ---------- ONE way to open a stored message, by identifier: feed cards, search, banners, Android notifications, My activity ---------- */
+  /* ref = { t: 'request'|'reply'|'ack'|'resolve'|'broadcast'|'inbox', caseId, packetId }. Opening never changes a draft: it lays a sheet over whatever screen is showing. */
+  function openMessage(ref) {
+    if (!ref || !ref.t) return false;
+    var v = ui.viewer;
+    if (ui.onboard) { ui.pendingRef = ref; return false; }          // finish saying where you are first; the message is still there afterwards
+    if (ref.t === 'inbox') { ui.seg = 'requests'; ui.search = { open: false, q: '' }; closeSheet(); go('feed'); return true; }
+    if (ref.t === 'broadcast') {
+      if (!ref.packetId || !S().packets[ref.packetId] || !S().inbox[v][ref.packetId]) { missingMessage(); return false; }
+      settleScreen('feed'); openUpdate(ref.packetId); return true;
+    }
+    var rid = ref.caseId, r = rid && S().requests[rid];
+    if (!r || !M.caseState(v, rid)) { missingMessage(); return false; }
+    var author = r.authorNodeId === v;
+    settleScreen(author || M.myReplies(v, rid).length ? 'activity' : 'feed');
+    var focus = null;
+    if (ref.t === 'reply' && ref.packetId && S().packets[ref.packetId] && S().inbox[v][ref.packetId]) focus = ref.packetId;
+    else if (ref.t === 'ack' && ref.packetId) focus = ref.packetId;                  // an acknowledgment points at MY offer it acknowledges
+    openRequest(rid, { focusPid: focus }); return true;
+  }
+  /* Behind a message sheet, show the screen it belongs to, but only when nothing is half-written. */
+  function settleScreen(name) { if (ui.screen === 'home' && !draftDirty() && !ui.sheet) { ui.screen = name; render(true); } }
+  UI.openMessage = openMessage;
+  window.__relayOpenPending = function () { if (!NATIVE) return; var r = NB.takePendingOpen && NB.takePendingOpen(); if (r) openMessage(r); };
+
+  /* ---------- incoming-message banner (in the page, never over an input, never repeated) ---------- */
+  function hideBanner() { var b = ui.banner; clearTimeout(b.timer); b.cur = null; $('banner').hidden = true; clear($('banner')); }
+  function showBanner() {
+    var b = ui.banner, el = $('banner'); if (!el) return;
+    if (!b.cur) { b.cur = b.q.shift() || null; }
+    if (!b.cur) { hideBanner(); return; }
+    var n = b.cur, more = b.q.length;
+    clear(el); el.hidden = false; el.className = 'banner' + (n.priority ? ' priority' : ''); el.setAttribute('data-event', n.eventId || '');
+    function open() { var x = b.cur; if (!x) return; hideBanner(); openMessage(x.ref); showBanner(); }
+    el.appendChild(h('div', { class: 'bmsg', id: 'banner-msg', on: { click: open } }, h('strong', {}, n.line), h('small', {}, more ? more + ' more important ' + (more === 1 ? 'message' : 'messages') : (n.summary ? 'Tap to see them in your inbox' : 'Received on this phone. Tap to open'))));
+    el.appendChild(h('button', { class: 'bopen', id: 'banner-open', on: { click: open } }, n.action));
+    el.appendChild(h('button', { class: 'bx', id: 'banner-dismiss', 'aria-label': 'Dismiss notification', on: { click: function () { hideBanner(); showBanner(); } } }, icon('x')));
+    clearTimeout(b.timer); b.timer = setTimeout(function () { if (el.contains(document.activeElement)) { showBanner(); return; } hideBanner(); showBanner(); }, 45000);       // long enough that someone who opens the app a little late still sees it
+  }
+  /* events: [{ kind, ref, line, action, priority, eventId }]. Dismissing a banner leaves the message unread; it stays in "New to you". */
+  UI.incoming = function (events) {
+    /* Pop-ups are for IMPORTANT messages only: a response to your request or an acknowledgment of your offer, an urgent request in your area (or one step away), a missing-person search aimed at
+       your area. Everything else still lands in the inbox (badge, "New to you") without interrupting. The person can turn pop-ups off in About; the inbox is unaffected either way. */
+    var fresh = (events || []).filter(function (e) { var k = e.eventId || (e.ref && e.ref.packetId) || e.line; if (ui.announced[k]) return false; ui.announced[k] = true; return !!e.priority && ui.popups !== 'off' && !e.stale; });
+    if (!fresh.length) return;
+    var b = ui.banner, pool = (b.cur ? [b.cur] : []).concat(b.q, fresh);
+    if (pool.length > 2) pool = [{ kind: 'summary', summary: true, priority: true, eventId: 'summary-' + Date.now(), ref: { t: 'inbox' }, line: pool.length + ' important messages arrived', action: 'Open inbox' }];   // a burst becomes ONE pop-up
+    b.cur = pool[0]; b.q = pool.slice(1); showBanner();
+  };
+  /* The browser prototype has no radio, so its banners come from packets that arrive in its own simulated clock: the same rules the Android engine applies. */
+  function helpTitleOf(pl) {
+    if (pl.kind === 'missing') return 'Missing person reported';
+    return { Medical: 'Medical assistance requested', Rescue: 'Rescue requested', 'Food & water': 'Food and water requested', Shelter: 'Shelter requested' }[pl.category] || 'Help requested';
+  }
+  function noticeFor(v, pid) {
+    var p = S().packets[pid]; if (!p || p.originNodeId === v) return null;
+    var r = p.requestId && S().requests[p.requestId], pl = p.payload || {}, ref, line, action = 'Open message', pri = false;
+    if (p.type === 'request') {
+      if (!r || r.authorNodeId === v) return null;
+      var held = r.versions.filter(function (x) { return S().inbox[v][x] && S().packets[x].version < p.version; });
+      var prev = held.length ? S().packets[held[held.length - 1]] : null;
+      if (prev && contentKey(prev.payload || {}) === contentKey(pl)) return null;
+      ref = { t: 'request', caseId: p.requestId, packetId: pid }; line = (prev ? 'Request updated' : helpTitleOf(pl)) + ' · ' + (pl.areaHoodName || pl.area || pl.hoodName || '');
+    } else if (p.type === 'reply') {
+      if (!r || r.authorNodeId !== v) return null;
+      ref = { t: 'reply', caseId: p.requestId, packetId: pid }; line = pl.kind === 'sighting' ? 'Someone sent a possible sighting' : 'Someone sent a response'; action = 'View response'; pri = true;
+    } else if (p.type === 'ack') {
+      var rp = S().packets[pl.replyPacketId]; if (!rp || rp.originNodeId !== v) return null;
+      ref = { t: 'ack', caseId: p.requestId, packetId: rp.id }; line = 'The requester acknowledged your ' + (rp.payload.kind === 'sighting' ? 'sighting' : 'offer'); action = 'View response'; pri = true;
+    } else if (p.type === 'resolve') {
+      if (!r || !M.myReplies(v, p.requestId).length) return null;
+      ref = { t: 'resolve', caseId: p.requestId, packetId: pid }; line = 'A request you responded to was marked resolved';
+    } else if (p.type === 'broadcast') { ref = { t: 'broadcast', caseId: null, packetId: pid }; line = 'Community update received · ' + (pl.area || pl.hoodName || ''); action = 'Open update'; }
+    else return null;
+    if (p.type === 'request' && (pl.urgent || pl.kind === 'missing')) { var vh = myHood().id, areas = [pl.areaHood].concat(pl.targets || []).filter(Boolean); pri = !!vh && areas.some(function (a) { return M.nearby(vh, a); }); }
+    return { kind: p.type, ref: ref, line: line.replace(/ · $/, ''), action: action, priority: pri, eventId: pid };
+  }
+  function arrivalsSimulated(v) {
+    var cur = {}; Object.keys(S().inbox[v]).forEach(function (k) { cur[k] = 1; }); var prev = ui.seen[v]; ui.seen[v] = cur;
+    if (!prev) return [];
+    return Object.keys(cur).filter(function (k) { return !prev[k]; }).map(function (k) { return noticeFor(v, k); }).filter(Boolean);
+  }
+
+  /* ---------- Refresh: re-read this phone's own storage now, and ask the radio to look around if it can. Never claims more than it knows. ---------- */
+  function refreshMsg(msg, tone) { ui.refresh.msg = msg; ui.refresh.tone = tone || ''; renderRefresh(); }
+  function renderRefresh() {
+    var n = $('refreshnote'), b = $('btn-refresh'); if (!n || !b) return;
+    n.className = 'refreshnote ' + (ui.refresh.tone || ''); n.textContent = ui.refresh.msg || '';
+    b.classList.toggle('spinning', !!ui.refresh.busy); b.setAttribute('aria-busy', String(!!ui.refresh.busy));
+  }
+  function clockText(ms) { var d = new Date(ms); return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function receivedIds() { var o = {}; Object.keys(S().inbox[ui.viewer] || {}).forEach(function (k) { var p = S().packets[k]; if (p && p.originNodeId !== ui.viewer && p.type !== 'attachment' && p.type !== 'address') o[k] = 1; }); return o; }
+  function finishRefresh(before, t0) {
+    ui.refresh.busy = false; ui.refresh.last = Date.now();
+    var now = receivedIds(), n = Object.keys(now).filter(function (k) { return !before[k]; }).length;
+    if (n) refreshMsg(n + (n === 1 ? ' new message arrived' : ' new messages arrived') + ' (checked ' + clockText(Date.now()) + ').', 'good');
+    else refreshMsg('Checked ' + clockText(Date.now()) + '. Nothing new has arrived. Messages only come from nearby phones that have Relay.', '');
+  }
+  UI.refreshNow = function () {
+    var r = ui.refresh, nowMs = Date.now();
+    if (r.busy || nowMs - r.tap < 1200) return;                      // rapid taps do not stack requests
+    r.tap = nowMs; r.busy = true; var before = receivedIds();
+    refreshMsg('Checking this phone and nearby phones…', '');
+    if (!NATIVE) {                                                     // the browser prototype: nothing to fetch, and the simulated world must not move because of a tap
+      render(); setTimeout(function () { r.busy = false; r.last = Date.now(); refreshMsg('List refreshed. In this prototype the nearby phones are simulated and are not queried; time does not move when you tap.', ''); }, 450); return;
+    }
+    if (NB.refresh) NB.refresh();                                      // 1. re-read the phone-local database right now
+    afterTick(true);                                                   //    (redraw keeps the tab, scroll, search text and every unfinished draft)
+    var res = NB.refreshNow ? NB.refreshNow() : { state: 'error' };    // 2. ask the BLE engine to look for nearby phones, if the phone allows it
+    if (res.state === 'unsupported') { r.busy = false; refreshMsg('Showing messages saved on this phone. This phone has no Bluetooth LE, so Relay cannot look for nearby phones.', 'warn'); return; }
+    if (res.state === 'permission') { r.busy = false; refreshMsg('Showing messages saved on this phone. Nearby-device permission is off, so Relay cannot look for new ones. Tap the status above to allow it.', 'warn'); return; }
+    if (res.state === 'bluetooth_off') { r.busy = false; refreshMsg('Showing messages saved on this phone. Bluetooth is off, so Relay cannot look for new ones.', 'warn'); return; }
+    if (res.state !== 'ready') { r.busy = false; refreshMsg('Showing messages saved on this phone. Relay could not start looking for nearby phones.', 'warn'); return; }
+    setTimeout(function () { if (NB.refresh) NB.refresh(); afterTick(true); finishRefresh(before, nowMs); }, 5000);
+  };
 
   /* ---------- seeded demo world + quiet transport ---------- */
   function samplePhoto() {
@@ -787,7 +1121,7 @@
     var cs = casesFor(v);
     return [NATIVE ? Math.floor(S().tick / 3) : 0, Object.keys(S().inbox[v]).length, Object.keys(S().outbox[v]).length, M.hoodState(v).due ? 1 : 0, M.hoodState(v).reliable ? 1 : 0,
       cs.filter(function (i) { return i.expired; }).length, cs.filter(function (i) { return i.resolved; }).length, cs.filter(function (i) { return i.renewed; }).length,
-      NATIVE ? radioSig() : ''].join(':');   // Android: a change in radio state (permission granted, Bluetooth on, phones seen) must redraw the status chip/card
+      (function () { var u = unreadCounts(v); return u.feed + '/' + u.activity; })(), NATIVE ? radioSig() : ''].join(':');   // Android: a change in radio state (permission granted, Bluetooth on, phones seen) must redraw the status chip/card
   }
   function counts(v) {
     var o = { req: 0, bc: 0, rep: 0, ack: 0, res: 0, ownExp: 0 };
@@ -800,15 +1134,14 @@
   }
   function afterTick(force) {
     var sig = signature(), c = counts(ui.viewer);
-    if (lastCounts && ui.viewer === lastCounts.v) {
-      var p = lastCounts.c, msg = c.rep > p.rep ? 'A response reached your phone.' : c.ack > p.ack ? 'The requester acknowledged your offer.' : c.res > p.res ? 'A request you responded to was marked resolved.' :
-        c.ownExp > p.ownExp ? 'Your request has expired. Renew it from My activity if you still need help.' : c.req > p.req ? 'A new request reached your phone.' : c.bc > p.bc ? 'A new community update reached your phone.' : '';
-      if (msg) toast(msg);
-    }
+    if (lastCounts && ui.viewer === lastCounts.v && c.ownExp > lastCounts.c.ownExp) toast('Your request has expired. Renew it from My activity if you still need help.');
     lastCounts = { v: ui.viewer, c: c };
+    if (!NATIVE) UI.incoming(arrivalsSimulated(ui.viewer));            // Android banners come from the engine's own "newly stored" signal instead
+    if (NATIVE && NB.takeIncoming) UI.incoming(NB.takeIncoming());
     if (force || sig !== lastSig) {
       lastSig = sig;
       var ae = document.activeElement;
+      if (!force && ae && ae.id === 'inbox-search') { renderTop(); renderNav(); renderInboxBody(); return; }   // keep typing: only the results move
       if (!force && ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) { pendingRender = true; return; }
       render();
     }
@@ -847,10 +1180,13 @@
     if (!vw.hidden) vw.appendChild(document.createTextNode('Prototype · using the app as ' + PERSONA_NAMES[vn.key] + ' · tap to change'));
   }
   function renderNav() {
-    var defs = [['home', 'Home', 'home'], ['request', 'Request', 'plus'], ['feed', 'Feed', 'heart'], ['activity', 'My activity', 'list']];
+    var defs = [['home', 'Home', 'home'], ['request', 'Request', 'plus'], ['feed', 'Inbox', 'heart'], ['activity', 'My activity', 'list']], u = ui.viewer ? unreadCounts(ui.viewer) : { feed: 0, activity: 0 };
     document.querySelectorAll('[data-nav]').forEach(function (b) {
       var d = defs.filter(function (x) { return x[0] === b.getAttribute('data-nav'); })[0]; clear(b);
+      var n = d[0] === 'feed' ? u.feed : d[0] === 'activity' ? u.activity : 0;
       b.appendChild(icon(d[2])); b.appendChild(document.createTextNode(d[1]));
+      if (n) b.appendChild(h('span', { class: 'badge', 'aria-hidden': 'true' }, n > 9 ? '9+' : String(n)));
+      b.setAttribute('aria-label', d[1] + (n ? ', ' + n + ' new' : ''));
       if (ui.screen === d[0]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
   }
@@ -869,7 +1205,8 @@
   UI.start = function () {
     if (NATIVE) { NB.refresh(); ui.viewer = S().keys.A; ui.onboard = !NB.hoodSet; ui.form = newForm(); ui.auto = false; }
     else { ui.viewer = S().keys.A; seedWorld(); ui.onboard = !applyStoredArea(); ui.form = newForm(); ui.auto = true; }
-    $('btn-info').appendChild(icon('info')); $('sheet-close').appendChild(icon('x'));
+    ui.popups = load('relay.popups') === 'off' ? 'off' : 'important';
+    $('btn-info').appendChild(icon('info')); $('sheet-close').appendChild(icon('x')); $('btn-refresh').appendChild(icon('refresh')); $('btn-refresh').addEventListener('click', UI.refreshNow);
     document.querySelector('.mark').appendChild(icon('signal'));
     $('btn-info').addEventListener('click', function () { openAbout(false); }); $('viewing').addEventListener('click', function () { openAbout(true); });
     $('area-chip').addEventListener('click', function () { if (!ui.onboard) openArea(); });
@@ -878,7 +1215,9 @@
     document.querySelectorAll('[data-nav]').forEach(function (b) { b.addEventListener('click', function () { go(b.getAttribute('data-nav')); }); });
     lastCounts = { v: ui.viewer, c: counts(ui.viewer) };
     render(true);
-    if (NATIVE) setInterval(function () { if (window.__relayChanged) window.__relayChanged(); }, 30000); else syncTimer();
+    if (NATIVE) { setInterval(function () { if (window.__relayChanged) window.__relayChanged(); }, 30000); setTimeout(function () { if (window.__relayOpenPending) window.__relayOpenPending(); }, 0); } else syncTimer();
+    ui.seen[ui.viewer] = null; if (!NATIVE) arrivalsSimulated(ui.viewer);
+    if (NATIVE && NB.takeIncoming) UI.incoming(NB.takeIncoming());      // important messages announced while the app was closed greet the person as soon as the page is up
   };
   UI.nativeChanged = function () { afterTick(false); };
 })();

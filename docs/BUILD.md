@@ -16,6 +16,7 @@ cd android && ./gradlew :app:testDebugUnitTest                 # JVM: protocol, 
 cd .. && tests/run_engine.sh && tests/run_independent_audit.sh # browser engine + independent audit scripts
 cd android && ./gradlew :app:syncRelayAssets :app:testDebugUnitTest && cd .. && tests/run_android_ui.sh 390 844   # WebView adapter vs REAL engine snapshots
 tests/run_app22.sh 390 844 && tests/run_sim.sh 1440 860        # browser prototype + simulator regression
+tests/run_android_inbox.sh 390 844                             # inbox / search / read state / banner / notification routing / refresh (needs :app:testDebugUnitTest first: it writes the fixtures)
 cd android && ./gradlew :app:lintDebug
 # emulator / device instrumented tests (SQLite contract, persistence, Keystore, bridge, manifest, WebView smoke):
 ./gradlew :app:connectedDebugAndroidTest

@@ -14,12 +14,15 @@
       <div class="brand"><span class="mark" aria-hidden="true"></span><div><strong>relay.</strong><small>Community, even offline.</small></div></div>
       <div class="topbtns">
         <button class="areabtn" id="area-chip" aria-label="Your area"></button>
+        <button class="iconbtn" id="btn-refresh" aria-label="Check for new messages" title="Check for new messages"></button>
         <button class="iconbtn" id="btn-info" aria-label="About this prototype"></button>
       </div>
     </div>
     <div class="statusrow" id="statusrow"></div>
+    <div class="refreshnote" id="refreshnote" role="status" aria-live="polite"></div>
     <button class="viewing" id="viewing" hidden></button>
   </header>
+  <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
   <main id="screen" class="screen" tabindex="-1"></main>
   <nav class="bottomnav" aria-label="Main">
     <button data-nav="home"></button><button data-nav="request"></button><button data-nav="feed"></button><button data-nav="activity"></button>

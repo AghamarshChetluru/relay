@@ -14,7 +14,12 @@ object RelayRuntime {
     private var ble: BleTransport? = null
     val listeners = CopyOnWriteArrayList<() -> Unit>()
     @Volatile var identityWasReset = false; private set
+    /** True while MainActivity is in front. Decides banner (open) versus Android notification (closed). */
+    @Volatile var foreground = false
+    /** A message the user asked to open (notification tap) before the page was ready to show it. Taken by the page exactly once. */
+    @Volatile var pendingOpen: Ref? = null
 
+    fun engineOrNull(): RelayEngine? = engine
     @Synchronized fun engine(ctx: Context): RelayEngine {
         engine?.let { return it }
         val app = ctx.applicationContext
@@ -24,8 +29,10 @@ object RelayRuntime {
                 if (store.getSetting("identity") != null) identityWasReset = true    // keystore key lost (e.g. restore on another phone): old authorship cannot be proven any more
                 store.setSetting("identity", prot.wrap(fresh.serialize()))
             }
+        ReadState.initIfNeeded(store)
         val e = RelayEngine(store, crypto, identity)
         e.onChange = { notifyChanged() }
+        e.onStored = { sp -> NoticeCenter.onStored(app, e, sp) }
         engine = e
         ble = BleTransport(app, e) { notifyChanged() }
         return e

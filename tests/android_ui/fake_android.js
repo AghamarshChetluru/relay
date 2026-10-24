@@ -4,7 +4,10 @@
   var q = new URLSearchParams(location.search); var FIX = window.__FIX;
   window.__cur = q.get('fx') || 'empty_new_phone'; window.__radioFx = q.get('radio') || null; window.__calls = []; window.__nextResult = null;
   window.__fx = function (name) { window.__cur = name; };
-  function snap() { var s = JSON.parse(JSON.stringify(FIX.snapshots[window.__cur])); if (window.__radioFx) s.radio = JSON.parse(JSON.stringify(FIX.snapshots[window.__radioFx])).radio; return JSON.stringify(s); }
+  try { if (!q.get('keep')) localStorage.removeItem('relay.popups'); } catch (e) {}   // each test page starts with default settings unless it asks to keep them (?keep=1)
+  window.__readExtra = {}; (q.get('read') || '').split(',').filter(Boolean).forEach(function (id) { window.__readExtra[id] = 1; });   // ?read=a,b: what the phone's SQLite already holds after a restart
+  window.__incoming = q.get('incoming') ? JSON.parse(q.get('incoming')) : []; window.__pendingOpen = q.get('open') ? JSON.parse(q.get('open')) : null; window.__refreshRes = { state: 'ready' }; window.__notif = { enabled: true, canAsk: false };
+  function snap() { var s = JSON.parse(JSON.stringify(FIX.snapshots[window.__cur])); s.flags.read = (s.flags.read || []).concat(Object.keys(window.__readExtra)); if (window.__radioFx) s.radio = JSON.parse(JSON.stringify(FIX.snapshots[window.__radioFx])).radio; return JSON.stringify(s); }
   function rec(n, a) { window.__calls.push([n].concat([].slice.call(a))); }
   function res(def) { return JSON.stringify(window.__nextResult || def); }
   var okR = { ok: true, error: null, caseId: 'c'.repeat(32), packetId: 'f'.repeat(32) };
@@ -18,6 +21,12 @@
     attachment: function (id) { rec('attachment', arguments); return window.__drawnImage || FIX.attachments[id] || ''; },
     requestPermissions: function () { rec('requestPermissions', arguments); }, requestEnableBluetooth: function () { rec('requestEnableBluetooth', arguments); },
     openAppSettings: function () { rec('openAppSettings', arguments); }, startRelay: function () { rec('startRelay', arguments); }, stopRelay: function () { rec('stopRelay', arguments); },
+    markRead: function (j) { rec('markRead', arguments); JSON.parse(j).forEach(function (id) { window.__readExtra[id] = 1; }); return JSON.stringify({ ok: true }); },
+    takeIncoming: function () { var a = window.__incoming; window.__incoming = []; return JSON.stringify(a); },
+    takePendingOpen: function () { var r = window.__pendingOpen; window.__pendingOpen = null; return r ? JSON.stringify(r) : ''; },
+    refreshNow: function () { rec('refreshNow', arguments); return JSON.stringify(window.__refreshRes); },
+    notificationState: function () { return JSON.stringify(window.__notif); },
+    requestNotifications: function () { rec('requestNotifications', arguments); }, openNotificationSettings: function () { rec('openNotificationSettings', arguments); },
     shareDiagnostics: function () { rec("shareDiagnostics", arguments); return JSON.stringify({ ok: true, error: null }); },
     shareApp: function () { rec('shareApp', arguments); return JSON.stringify({ ok: true, sha256: 'ab'.repeat(32), bytes: 3271955, error: null }); }
   };

@@ -41,7 +41,7 @@ object Snapshot {
         val hood = JsonObj().str("id", hs.id).str("name", hs.name).num("ageMs", hs.ageMs).bool("reliable", hs.reliable).bool("due", hs.due).bool("stale", hs.stale).bool("set", hoodSet)
         return JsonObj().num("now", now).raw("me", JsonObj().str("id", engine.identity.deviceId).raw("hood", hood.end()).end())
             .raw("packets", jsonArray(pk)).raw("attachments", jsonArray(att)).raw("privateAddr", priv.end())
-            .raw("flags", JsonObj().raw("hidden", jsonStrings(store.flags("hidden"))).raw("notRelevant", jsonStrings(store.flags("notRelevant"))).end())
+            .raw("flags", JsonObj().raw("hidden", jsonStrings(store.flags("hidden"))).raw("notRelevant", jsonStrings(store.flags("notRelevant"))).raw("read", jsonStrings(store.flags(ReadState.READ))).end())
             .raw("radio", radio.toJson()).end()
     }
 }

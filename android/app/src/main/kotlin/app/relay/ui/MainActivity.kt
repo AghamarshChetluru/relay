@@ -13,9 +13,11 @@ import android.os.Looper
 import android.provider.Settings
 import android.webkit.*
 import androidx.webkit.WebViewAssetLoader
+import app.relay.NoticeCenter
 import app.relay.RelayRuntime
 import app.relay.ble.BleTransport
 import app.relay.core.JsonObj
+import app.relay.core.Ref
 import app.relay.service.RelayService
 import app.relay.share.ApkShare
 
@@ -24,7 +26,7 @@ class MainActivity : Activity(), NativeBridge.Host {
     private lateinit var web: WebView
     internal val webViewForTest: WebView get() = web
     private val main = Handler(Looper.getMainLooper())
-    private companion object { const val REQ_PHOTO = 9 }
+    private companion object { const val REQ_PHOTO = 9; const val HANDLED = "relay.handled" }
     private var pendingPush = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null      // photo picker for <input type=file>; must ALWAYS be answered or the input stays dead
     private val listener: () -> Unit = {
@@ -60,10 +62,23 @@ class MainActivity : Activity(), NativeBridge.Host {
         web.loadUrl("https://appassets.androidplatform.net/assets/web/app.html")
         RelayRuntime.engine(this)
         if (getSharedPreferences("relay", MODE_PRIVATE).getBoolean("enabled", true)) startRelay()
+        handleOpenIntent(intent)        // cold start from a notification tap: the reference waits in RelayRuntime until the page asks for it
     }
 
-    override fun onResume() { super.onResume(); RelayRuntime.listeners.add(listener); push() }
-    override fun onPause() { RelayRuntime.listeners.remove(listener); super.onPause() }
+    /** A tapped notification while the app is already running (singleTop): route to the exact message without recreating anything. */
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleOpenIntent(intent) }
+
+    private fun handleOpenIntent(i: Intent?) {
+        if (i == null || i.getBooleanExtra(HANDLED, false)) return
+        val ref = Notifier.refFrom(i) ?: return
+        i.putExtra(HANDLED, true)                // an Intent re-delivered by the system (rotation, recreation) must not re-open the same message
+        RelayRuntime.pendingOpen = ref
+        if (ref.packetId != null) { Notifier.cancelEvents(this, listOf(ref.packetId)); NoticeCenter.forget(RelayRuntime.engine(this).store, listOf(ref.packetId)) }
+        if (::web.isInitialized) main.post { web.evaluateJavascript("window.__relayOpenPending&&window.__relayOpenPending()", null) }
+    }
+
+    override fun onResume() { super.onResume(); RelayRuntime.foreground = true; RelayRuntime.listeners.add(listener); NoticeCenter.surfaceMissed(RelayRuntime.engine(this)); push() }
+    override fun onPause() { RelayRuntime.foreground = false; RelayRuntime.listeners.remove(listener); super.onPause() }
     @Deprecated("system back goes to background so the radio service is not interrupted") override fun onBackPressed() { moveTaskToBack(true) }
 
     private fun push() { if (::web.isInitialized) web.evaluateJavascript("window.__relayChanged&&window.__relayChanged()", null) }
@@ -91,6 +106,12 @@ class MainActivity : Activity(), NativeBridge.Host {
         startRelay(); RelayRuntime.notifyChanged()
     }
     override fun onDestroy() { fileCallback?.onReceiveValue(null); fileCallback = null; super.onDestroy() }
+    override fun requestNotifications() {
+        runOnUiThread { if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 11) else openNotificationSettings() }
+    }
+    override fun openNotificationSettings() {
+        runOnUiThread { try { startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)) } catch (_: Exception) { openAppSettings() } }
+    }
     override fun openAppSettings() { runOnUiThread { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))) } }
     override fun startRelay() { RelayService.start(this); RelayRuntime.ble(this).start() }
     override fun stopRelay() { RelayService.stop(this) }

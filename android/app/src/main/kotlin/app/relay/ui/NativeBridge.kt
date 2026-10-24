@@ -3,6 +3,7 @@ package app.relay.ui
 import android.content.Context
 import android.util.Base64
 import android.webkit.JavascriptInterface
+import app.relay.NoticeCenter
 import app.relay.RelayRuntime
 import app.relay.core.*
 
@@ -13,6 +14,7 @@ import app.relay.core.*
 class NativeBridge(private val ctx: Context, private val host: Host) {
     interface Host {
         fun requestPermissions(); fun requestEnableBluetooth(); fun openAppSettings(); fun shareApp(): String; fun startRelay(); fun stopRelay(); fun shareDiagnostics(): String
+        fun requestNotifications(); fun openNotificationSettings()
     }
     private val engine get() = RelayRuntime.engine(ctx)
 
@@ -54,6 +56,35 @@ class NativeBridge(private val ctx: Context, private val host: Host) {
     @JavascriptInterface fun confirmHood(): String { engine.confirmHood(); return res(Outcome.ok(null, null)) }
     @JavascriptInterface fun hide(caseId: String): String { engine.store.setFlag("hidden", caseId); RelayRuntime.notifyChanged(); return res(Outcome.ok(null, null)) }
     @JavascriptInterface fun notRelevant(packetId: String): String { engine.store.setFlag("notRelevant", packetId); RelayRuntime.notifyChanged(); return res(Outcome.ok(null, null)) }
+
+    // ---- inbox: read state, banners, notification routing, refresh
+    /** Marks messages opened ON THIS PHONE. Not a network event: no packet is created and nobody is told. Also withdraws the notifications that announced them. */
+    @JavascriptInterface fun markRead(json: String): String {
+        val ids = try { (Json.parse(json) as? List<*>)?.filterIsInstance<String>()?.filter { it.length == 32 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }?.take(200) ?: emptyList() } catch (e: WireException) { emptyList() }
+        ReadState.markRead(engine.store, ids); Notifier.cancelEvents(ctx, ids); Notifier.cancelSummaries(ctx); NoticeCenter.forget(engine.store, ids)
+        RelayRuntime.notifyChanged(); return JsonObj().bool("ok", true).num("count", ids.size.toLong()).end()
+    }
+    /** Banners for packets stored while the app is open. Each notice is handed over once. */
+    @JavascriptInterface fun takeIncoming(): String = jsonArray(NoticeCenter.drainIncoming().map { it.toJson() })
+    /** The message a tapped notification asked for, handed over once (the page may not have existed when it was tapped). */
+    @JavascriptInterface fun takePendingOpen(): String { val r = RelayRuntime.pendingOpen; RelayRuntime.pendingOpen = null; return r?.toJson() ?: "" }
+    /**
+     * "Check now": the page has already re-read this phone's database. This asks the radio to look for nearby phones if it can. It reports only what the radio can do;
+     * whether anything arrives is decided by the phones nearby, and the page counts arrivals from the database, never from this call.
+     */
+    @JavascriptInterface fun refreshNow(): String {
+        val ble = RelayRuntime.ble(ctx); val st = ble.status()
+        val state = when { !st.bluetoothSupported -> "unsupported"; !st.permissionsGranted -> "permission"; !st.bluetoothEnabled -> "bluetooth_off"; else -> "ready" }
+        if (state == "ready") { if (!st.serviceRunning) host.startRelay(); nudge() }
+        RelayRuntime.notifyChanged()
+        return JsonObj().str("state", state).bool("wasRunning", st.serviceRunning).bool("scanning", st.scanning).end()
+    }
+    @JavascriptInterface fun notificationState(): String {
+        val on = Notifier.enabled(ctx); val needsAsk = android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        return JsonObj().bool("enabled", on).bool("canAsk", needsAsk).end()
+    }
+    @JavascriptInterface fun requestNotifications() = host.requestNotifications()
+    @JavascriptInterface fun openNotificationSettings() = host.openNotificationSettings()
 
     /** Photo bytes as a data URL, only if fully received and hash-verified. */
     @JavascriptInterface fun attachment(id: String): String {

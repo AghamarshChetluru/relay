@@ -20,6 +20,7 @@
     S.tick = tick; S.keys = { A: me }; S.order = [me]; S.edges = []; S.lastHops = []; S.opts = { evictExpired: false, storageCap: Infinity, autoConfirm: false, userNode: me };
     S.requests = {}; S.packets = {}; S.attachments = {}; S.privateAddr = snap.privateAddr || {};
     S.inbox = {}; S.inbox[me] = {}; S.outbox = {}; S.outbox[me] = {};
+    var rd = {}; ((snap.flags && snap.flags.read) || []).forEach(function (c) { rd[c] = true; }); NB.read = rd;     // messages the person opened ON THIS PHONE (durable in SQLite; never sent anywhere)
     var hid = {}; (snap.flags.hidden || []).forEach(function (c) { hid[c] = true; });
     var nr = {}; (snap.flags.notRelevant || []).forEach(function (c) { nr[c] = true; });
     S.local = {}; S.local[me] = { hidden: hid, notRelevant: nr };
@@ -100,6 +101,14 @@
   /* The simulator-only controls do nothing in the real app (there is no simulated clock or world). */
   M.step = function () { return 0; }; M.join = function () { return { ok: false, error: 'not available' }; }; M.sharers = function () { return []; };
 
+  /* ---- inbox: all of these are phone-local. Nothing here talks to a network, and none of it creates a packet. ---- */
+  NB.markRead = function (ids) { if (RA.markRead) RA.markRead(JSON.stringify(ids)); };
+  NB.takeIncoming = function () { return RA.takeIncoming ? (parse(RA.takeIncoming()) || []) : []; };       // banners for packets the engine just stored (each handed over once)
+  NB.takePendingOpen = function () { var s = RA.takePendingOpen ? RA.takePendingOpen() : ''; return s ? parse(s) : null; };   // the message a tapped notification asked for (once)
+  NB.refreshNow = function () { return (RA.refreshNow && parse(RA.refreshNow())) || { state: 'error' }; };
+  NB.notifications = function () { return (RA.notificationState && parse(RA.notificationState())) || { enabled: false, canAsk: false }; };
+  NB.requestNotifications = function () { if (RA.requestNotifications) RA.requestNotifications(); };
+  NB.openNotificationSettings = function () { if (RA.openNotificationSettings) RA.openNotificationSettings(); };
   NB.requestPermissions = function () { RA.requestPermissions(); };
   NB.enableBluetooth = function () { RA.requestEnableBluetooth(); };
   NB.openSettings = function () { RA.openAppSettings(); };

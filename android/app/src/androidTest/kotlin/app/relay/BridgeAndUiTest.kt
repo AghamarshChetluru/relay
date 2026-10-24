@@ -16,6 +16,7 @@ class BridgeAndUiTest {
     private val host = object : NativeBridge.Host {
         override fun requestPermissions() {}; override fun requestEnableBluetooth() {}; override fun openAppSettings() {}
         override fun shareApp() = "{}"; override fun startRelay() {}; override fun stopRelay() {}; override fun shareDiagnostics() = "{}"
+        override fun requestNotifications() {}; override fun openNotificationSettings() {}
     }
     @Suppress("UNCHECKED_CAST") private fun j(s: String) = Json.parse(s) as Map<String, Any?>
 

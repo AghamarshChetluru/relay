@@ -47,6 +47,8 @@ class RelayEngine(
     val cfg: PolicyConfig = PolicyConfig(), var canAdvertise: Boolean = true
 ) {
     @Volatile var onChange: (() -> Unit)? = null
+    /** Called once per packet that arrived from another phone and was newly stored (never for duplicates, rejected/expired packets or things this phone wrote). Keep it light. */
+    @Volatile var onStored: ((StoredPacket) -> Unit)? = null
     private val pendingOut = HashMap<String, Boolean>()   // "packetId|peer" -> was a detour
 
     private fun now() = clock.nowMs()
@@ -257,6 +259,8 @@ class RelayEngine(
         if (env.type == PacketType.ATTACHMENT && store.getAttachmentMeta(env.s("attachmentId")) == null) {
             store.putAttachmentMeta(AttachmentMeta(env.s("attachmentId"), env.caseHex!!, env.s("size").toInt(), env.s("sha256"), env.s("w").toInt(), env.s("h").toInt(), false, 0, false))
         }
+        // Observers run BEFORE housekeeping: housekeeping deletes the older version of a renewed request, and the inbox needs it to tell a renewal that only extended the time from one that changed the words.
+        try { onStored?.invoke(sp) } catch (_: Exception) { }      // a faulty observer must never affect storage or forwarding
         housekeeping(); changed()
         return RxResult(RxStatus.STORED, null, sp)
     }

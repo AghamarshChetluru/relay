@@ -41,3 +41,5 @@ No open-source license has been chosen yet; until the owner decides, all rights 
 ## What the browser prototype is not
 
 It simulates radio links. Passing its tests says nothing about Bluetooth range, pairing, power use or phone-model differences. The independent audit (`docs/RELAY_V2_2_INDEPENDENT_AUDIT.md`) lists the gaps between the simulation and a usable Android app.
+
+Inbox, search, read state, in-app pop-ups (important messages only), Android notifications and refresh: `docs/INBOX_AND_NOTIFICATIONS.md`.

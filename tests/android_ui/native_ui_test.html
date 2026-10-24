@@ -37,7 +37,7 @@ async function run(){
  var B=await load('requester_with_offer','radio_peers');
  B.click('[data-nav=activity]');var cards=B.QA('#screen article[data-rid]');ok(cards.length===2,'requester sees exactly its 2 cases from the real database ('+cards.length+')');
  var urg=B.Q('#screen article[data-rid="'+meta.urgentCase+'"]');ok(!!urg&&/Offer received/.test(urg.textContent)&&/Shared with a nearby phone/.test(urg.textContent),'urgent case: "Offer received" and "Shared with a nearby phone" derived from real receipts');
- ok(/Review offer/.test(urg.textContent),'Review offer action present');B.click(B.btn('Review offer'));
+ ok(/Review offer|View response/.test(urg.textContent),'the offer is reachable from the activity card ('+(/View response/.test(urg.textContent)?'View response, because it is unread':'Review offer')+')');B.click(B.btn('View response')||B.btn('Review offer'));
  ok(/Offer of help · Unverified/.test(B.sheet())&&/I am a nurse nearby/.test(B.sheet())&&/not proof/.test(B.sheet()),'offer text from the volunteer, labelled unverified');B.layout('offer sheet');
  B.click('[data-act=ack]');ok(B.calls('createAck').length===1&&B.calls('createAck')[0][1]===meta.requesterReplyId,'Acknowledge sends the REAL reply packet id to native');
  var sh=B.Q('[data-act=share-address]');ok(!!sh,'"Share my exact address with this volunteer" offered (private address exists on this phone)');B.click(sh);ok(B.calls('shareAddress').length===1&&B.calls('shareAddress')[0][1]===meta.requesterReplyId,'address share goes to native for that one reply');
@@ -68,7 +68,7 @@ async function run(){
  var oc=E.Q('#screen article[data-rid="'+meta.oldCase+'"]');ok(!!oc&&/Renewed/.test(oc.textContent)&&E.QA('#screen article[data-rid="'+meta.oldCase+'"]').length===1,'renewed case: ONE card, marked renewed (old + new packets present)');
  var dc=E.Q('#screen article[data-rid="'+meta.doneCase+'"]');ok(!!dc&&/Resolved on this phone/.test(dc.textContent),'resolved case shows Resolved');
  E.click('[data-nav=home]');ok(!!E.Q('#loc-prompt')&&/Are you still in Hauz Khas/.test(E.Q('#loc-prompt').textContent),'area last confirmed 31 min before this snapshot: the reminder is due (age computed from real timestamps)');E.click('#loc-yes');ok(E.calls('confirmHood').length===1,'location reminder confirm goes to native');
- E.click('[data-nav=feed]');var er=E.Q('#earlier');ok(!!er&&/Expired or resolved/.test(er.textContent),'resolved case sits in the "Expired or resolved" section');
+ E.click('[data-nav=feed]');var er=E.Q('#earlier');ok(!!er&&/Earlier messages/.test(er.textContent),'resolved case sits in the "Earlier messages" section');
  /* ===== F. forged resolve must not change status ===== */
  var F=await load('forged_resolve');F.click('[data-nav=feed]');var vc=F.Q('#screen .card[data-rid="'+meta.victimCase+'"]');
  ok(!!vc&&vc.getAttribute('data-state')==='active'&&!/Resolved/.test(vc.textContent),'a "resolve" signed by someone other than the requester is ignored (case stays active)');

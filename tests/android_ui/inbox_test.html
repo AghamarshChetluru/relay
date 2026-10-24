@@ -1,0 +1,184 @@
+<!DOCTYPE html><html><body style="margin:0"><pre id="out"></pre><script>
+/* Inbox, search, read state, banners, notification routing and refresh, through the EXACT web assets bundled in the APK, driven by REAL-engine snapshots.
+   The fake bridge only records calls and serves snapshots; it never invents a message. usage: inbox_test.html?w=390&h=844&base=/abs/native_ui_test */
+var q=new URLSearchParams(location.search),W=+q.get('w')||390,HH=+q.get('h')||844,BASE=q.get('base');
+var out=[];function ok(c,m){out.push((c?'PASS ':'FAIL ')+m)}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function load(fx,extra){return new Promise(function(res){var f=document.createElement('iframe');f.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block';
+ f.src='file://'+BASE+'/app_test.html?fx='+fx+(extra||'');f.onload=function(){setTimeout(function(){res(ctx(f))},300)};document.body.appendChild(f)})}
+function ctx(f){var w=f.contentWindow,d=w.document,X={w:w,d:d,errs:[]};w.addEventListener('error',function(e){X.errs.push(e.message)});
+ X.Q=function(s){return d.querySelector(s)};X.QA=function(s){return [].slice.call(d.querySelectorAll(s))};
+ X.click=function(s){var e=typeof s==='string'?X.Q(s):s;if(!e)throw new Error('missing '+s);e.click()};
+ X.type=function(s,v){var e=X.Q(s);e.focus();e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}))};
+ X.T=function(s){var e=X.Q(s);return e?e.textContent:''};X.sheet=function(){return d.getElementById('sheetbody').textContent};
+ X.calls=function(n){return w.__calls.filter(function(c){return c[0]===n})};
+ X.push=function(fx){if(fx)w.__fx(fx);w.__relayChanged();return sleep(60)};
+ X.nav=function(n){X.click('[data-nav='+n+']')};
+ X.cards=function(sel){return X.QA((sel||'#screen')+' article.card')};
+ X.vis=function(e){var r=e.getBoundingClientRect(),cs=w.getComputedStyle(e);return r.width>0&&r.height>0&&cs.display!=='none'};
+ X.layout=function(tag){var vw=d.documentElement.clientWidth,bad=[],small=[],sh=!d.getElementById('sheetroot').hidden,scope=sh?d.getElementById('sheet'):d.getElementById('appview'),sr=scope.getBoundingClientRect();
+  [].forEach.call(scope.querySelectorAll('*'),function(e){if(e.closest('svg')&&e.tagName!=='svg')return;if(!X.vis(e))return;var r=e.getBoundingClientRect();
+   if(r.right>sr.right+1.5||r.left<sr.left-1.5)bad.push(e.tagName+'.'+(typeof e.className==='string'?e.className:'')+'@'+Math.round(r.left)+'-'+Math.round(r.right));
+   if(e.matches('button,select,input:not(.sr),textarea,summary')&&(r.height<43.5||(e.tagName==='BUTTON'&&r.width<43.5)))small.push((e.id||e.className||e.textContent.slice(0,14))+':'+Math.round(r.width)+'x'+Math.round(r.height))});
+  ok(d.documentElement.scrollWidth<=vw+1&&bad.length===0,tag+': no horizontal overflow @'+W+' '+bad.slice(0,3).join(' | '));ok(small.length===0,tag+': touch targets >=44px '+small.slice(0,4).join(' | '))};
+ return X}
+var DEADLINE=Date.now();
+async function run(){
+ /* ================= 1. a phone that has just received three messages: groups, no duplicates, nothing marked read by rendering ================= */
+ var A=await load('inbox_s1');var I=A.w.__INBOX;A.nav('feed');
+ ok(!!A.Q('#grp-new')&&/New to you/.test(A.T('#screen'))&&A.cards('#grp-new').length===3,'1 three unread messages sit under "New to you" ('+A.cards('#grp-new').length+')');
+ var seen={};A.cards().forEach(function(c){var k=c.getAttribute('data-rid')||c.getAttribute('data-pid');seen[k]=(seen[k]||0)+1});
+ ok(Object.keys(seen).length===3&&Object.keys(seen).every(function(k){return seen[k]===1}),'1 every message appears in exactly ONE group (no duplicate cards)');
+ ok(A.calls('markRead').length===0,'1 rendering previews marked nothing read');
+ var med=A.Q('.card[data-rid="'+I.med+'"]');ok(!!med&&med.getAttribute('data-state')==='expired'&&/Expired/.test(med.textContent)&&med.getAttribute('data-unread')==='1','1 the expired request is shown as EXPIRED (never pretending to be active), and still unread');
+ ok(/Medical assistance|Medical help needed/.test(med.textContent)&&/Hauz Khas|Gate 2/.test(med.textContent)&&/ago|just now/.test(med.textContent),'1 each card shows type, title, reported area and age/last activity');
+ ok(!!A.Q('.card[data-rid="'+I.mis+'"] .dotnew')&&/Unread/.test(A.Q('.card[data-rid="'+I.mis+'"] .sr').textContent),'1 unread cards carry a dot and a screen-reader "Unread"');
+ ok(/3/.test(A.T('[data-nav=feed] .badge'))&&/3 new/.test(A.Q('[data-nav=feed]').getAttribute('aria-label')),'1 the Inbox tab shows 3 new, and says so to screen readers');
+ A.layout('inbox');
+ /* open the missing-person card: exactly that message is shown, and only it is marked read */
+ A.click('.card[data-rid="'+I.mis+'"]');
+ ok(!A.Q('#sheetroot').hidden&&/Looking for Meera/.test(A.sheet())&&/Lodhi Colony/.test(A.sheet()),'2 tapping a card opens that request');
+ var mr=A.calls('markRead');ok(mr.length>=1&&JSON.parse(mr[mr.length-1][1]).indexOf(I.misPkt)>=0&&JSON.parse(mr[mr.length-1][1]).indexOf(I.medPkt)<0,'2 opening it marks THAT message read (and not its neighbours)');
+ A.click('#sheet-close');await sleep(120);
+ ok(A.cards('#grp-new').length===2&&A.Q('.card[data-rid="'+I.mis+'"]').getAttribute('data-unread')==='0'&&!!A.Q('#grp-active .card[data-rid="'+I.mis+'"]'),'2 after reading, it leaves "New to you" and joins the active requests');
+ ok(/2/.test(A.T('[data-nav=feed] .badge')),'2 the badge follows (2 left)');
+ ok(A.calls('createAck').length===0&&A.calls('createReply').length===0&&A.calls('createResolve').length===0,'2 reading creates no packet: a read is not an acknowledgment');
+ /* restart: the phone's own storage remembers (the fake serves what SQLite would) */
+ var B=await load('inbox_s1','&read='+I.misPkt);B.nav('feed');
+ ok(B.Q('.card[data-rid="'+I.mis+'"]').getAttribute('data-unread')==='0'&&B.cards('#grp-new').length===2,'3 after a restart the read message is still read, the others still new');
+ var C=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));C.nav('feed');
+ ok(!C.Q('#grp-new')&&!!C.Q('#earlier')&&/Earlier messages \(1\)/.test(C.T('#earlier summary')),'3 with everything read: no "New" group; the expired request sits in "Earlier messages"');
+ ok(C.T('[data-nav=feed] .badge')==='','3 and no badge');
+
+ /* ================= 4. a new request arrives while the app is open: banner, Open, exact message, no repeat ================= */
+ A=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));A.nav('feed');
+ A.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},title:'Medical assistance requested',where:'Lodhi Colony',about:'',urgent:true,priority:true,line:'Medical assistance requested · Lodhi Colony',action:'Open message',eventId:I.med2Pkt}];
+ await A.push('inbox_s2');
+ var bn=A.Q('#banner');ok(!bn.hidden&&/Medical assistance requested · Lodhi Colony/.test(bn.textContent)&&!!A.Q('#banner-open')&&!!A.Q('#banner-dismiss'),'4 an in-app banner appears: "'+bn.textContent.slice(0,60)+'"');
+ ok(bn.getAttribute('role')==='status'&&bn.getAttribute('aria-live')==='polite'&&A.Q('#banner-dismiss').getAttribute('aria-label')==='Dismiss notification','4 the banner is a live region with a labelled dismiss button');
+ var br=bn.getBoundingClientRect(),sr=A.Q('#screen').getBoundingClientRect();ok(br.bottom<=sr.top+1,'4 the banner sits above the content, so it never covers an input');
+ A.layout('banner');
+ await A.push();await A.push();ok(A.QA('#banner').length===1&&!A.Q('#banner').hidden&&A.w.__calls.filter(function(c){return c[0]==='markRead'}).length===0,'4 further refreshes of the snapshot do not repeat or re-trigger it');
+ A.click('#banner-open');await sleep(100);
+ ok(A.Q('#banner').hidden&&!A.Q('#sheetroot').hidden&&/Insulin needed/.test(A.sheet())&&/Lodhi Colony/.test(A.sheet()),'4 Open shows exactly that request');
+ ok(JSON.parse(A.calls('markRead').slice(-1)[0][1]).indexOf(I.med2Pkt)>=0,'4 and marks it read on this phone');
+ A.click('#sheet-close');
+ /* dismiss leaves the message unread and does not open anything */
+ var D=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));
+ D.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Medical assistance requested · Lodhi Colony',action:'Open message',priority:true,eventId:'e-dismiss'}];await D.push('inbox_s2');
+ D.nav('feed');D.click('#banner-dismiss');await sleep(60);ok(D.Q('#banner').hidden&&D.Q('#sheetroot').hidden&&D.Q('.card[data-rid="'+I.med2+'"]').getAttribute('data-unread')==='1','4 dismissing hides the banner but leaves the message unread in "New to you"');
+ /* ---- which messages may interrupt: only IMPORTANT ones; the rest wait quietly in the inbox ---- */
+ var Q1=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q1.nav('feed');
+ Q1.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Help requested · Park lane',action:'Open message',priority:false,eventId:'e-quiet'}];
+ await Q1.push('inbox_s2');ok(Q1.Q('#banner').hidden&&Q1.QA('#banner *').length===0,'4b a message that is NOT important never pops up');
+ ok(Q1.cards('#grp-new').length>=1&&/[12]/.test(Q1.T('[data-nav=feed] .badge')),'4b but it is in "New to you" and on the Inbox badge, so nothing is lost');
+ var Q2=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q2.nav('feed');
+ Q2.click('#btn-info');Q2.click('#popups-off');ok(Q2.Q('#popups-off').getAttribute('aria-pressed')==='true','4c About has an "In-app pop-ups" setting (Important only / Off)');Q2.click('#sheet-close');
+ Q2.w.__incoming=[{kind:'reply',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Someone sent a response',action:'View response',priority:true,eventId:'e-off'}];await Q2.push('inbox_s2');
+ ok(Q2.Q('#banner').hidden&&Q2.cards('#grp-new').length>=1,'4c with pop-ups Off even an important message waits in the inbox (and the setting is remembered)');
+ var Q2b=await load('inbox_s1','&keep=1');Q2b.nav('feed');ok(Q2b.w.RelayUI.ui.popups==='off','4c the setting is remembered after a restart');
+ var Q3=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q3.nav('feed');
+ Q3.w.__incoming=[1,2,3].map(function(i){return {kind:'reply',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Someone sent a response #'+i,action:'View response',priority:true,eventId:'e-burst'+i}});await Q3.push('inbox_s2');
+ ok(!Q3.Q('#banner').hidden&&/3 important messages arrived/.test(Q3.T('#banner'))&&Q3.QA('#banner-open').length===1,'4d three important messages at once become ONE pop-up: "'+Q3.T('#banner strong')+'"');
+ Q3.click('#banner-msg');await sleep(80);ok(Q3.Q('#banner').hidden&&Q3.Q('[data-nav=feed]').getAttribute('aria-current')==='page','4e tapping the pop-up text (not only the button) opens it; a summary opens the inbox');
+ var Q4=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q4.nav('feed');
+ Q4.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Medical assistance requested · Lodhi Colony',action:'Open message',priority:true,eventId:'e-tap'}];await Q4.push('inbox_s2');
+ Q4.click('#banner-msg');await sleep(100);ok(!Q4.Q('#sheetroot').hidden&&/Insulin needed/.test(Q4.sheet()),'4e tapping the text of a single pop-up opens that exact message');
+ var Q5=await load('inbox_r1','&incoming='+encodeURIComponent(JSON.stringify([{kind:'reply',ref:{t:'reply',caseId:I.qm,packetId:I.o1},line:'Someone sent a response',action:'View response',priority:true,eventId:'e-away'}])));await sleep(100);
+ ok(!Q5.Q('#banner').hidden&&/Someone sent a response/.test(Q5.T('#banner')),'4f an important message announced while the app was closed pops up as soon as the app opens (tap it to open that response)');
+ Q5.click('#banner-msg');await sleep(100);ok(Q5.Q('#sheet .offer.flash, #sheet .offer.flashed')&&Q5.Q('#sheet .offer.flash, #sheet .offer.flashed').getAttribute('data-pid')===I.o1,'4f and tapping it opens that exact response');
+ /* a draft survives a banner + opening a message */
+ D.nav('request');D.type('#f-text','My neighbour needs oxygen urgently');D.type('#f-where','Near the park gate');
+ D.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Medical assistance requested · Lodhi Colony',action:'Open message',priority:true,eventId:'e-draft'}];await D.push();
+ ok(!D.Q('#banner').hidden&&D.Q('#f-text').value==='My neighbour needs oxygen urgently'&&D.d.activeElement&&D.d.activeElement.id==='f-text'||D.Q('#f-text').value==='My neighbour needs oxygen urgently','5 a banner arriving mid-form leaves the half-written request exactly as typed');
+ D.click('#banner-open');await sleep(100);ok(/Insulin needed/.test(D.sheet())&&D.Q('#f-text').value==='My neighbour needs oxygen urgently','5 opening the message lays a sheet over the form: the draft is untouched');
+ D.click('#sheet-close');await sleep(60);ok(D.Q('#f-text').value==='My neighbour needs oxygen urgently'&&D.Q('#f-where').value==='Near the park gate','5 closing it returns to the same draft');
+
+ /* ================= 6. search ================= */
+ var S=await load('inbox_s2','&read='+[I.misPkt,I.medPkt,I.upd,I.med2Pkt].join(','));
+ S.nav('feed');S.click('#btn-search');ok(!!S.Q('#inbox-search')&&S.Q('#btn-search').getAttribute('aria-expanded')==='true'&&S.d.activeElement.id==='inbox-search','6 the search button opens a field and focuses it');
+ S.type('#inbox-search','  LODHI colony ');await sleep(40);
+ var hits=S.cards('#inbox-body').map(function(c){return c.getAttribute('data-rid')});
+ ok(hits.indexOf(I.med2)>=0&&hits.indexOf(I.mis)>=0&&!/No matching/.test(S.T('#inbox-body')),'6 "Lodhi Colony" (trimmed, any case) finds the request reported there and the missing-person case last seen there ('+hits.length+')');
+ ok(S.d.activeElement.id==='inbox-search','6 typing keeps the keyboard focus in the search field while results update');
+ S.type('#inbox-search','medical');await sleep(40);hits=S.cards('#inbox-body').map(function(c){return c.getAttribute('data-rid')});
+ ok(hits.indexOf(I.med)>=0&&hits.indexOf(I.med2)>=0,'6 "medical" finds the active request AND the expired one (older matches are not hidden)');
+ S.type('#inbox-search','insul');await sleep(40);ok(S.cards('#inbox-body').length===1&&S.cards('#inbox-body')[0].getAttribute('data-rid')===I.med2,'6 partial words match ("insul")');
+ S.type('#inbox-search','water');await sleep(40);ok(S.cards('#inbox-body').length===1&&S.cards('#inbox-body')[0].getAttribute('data-pid')===I.upd,'6 community-update text is searchable ("water")');
+ S.type('#inbox-search','zzzz');await sleep(40);ok(/No matching messages on this phone\./.test(S.T('#empty-search'))&&/Relay can only search messages that have reached this phone\./.test(S.T('#empty-search')),'6 the empty state says exactly what it means');
+ S.type('#inbox-search','lodhi');await sleep(40);
+ /* filters compose with search; refresh and new snapshots keep the query and the focus */
+ S.click('.chip[data-filter="Missing"]');await sleep(60);
+ hits=S.cards('#inbox-body').map(function(c){return c.getAttribute('data-rid')});ok(S.Q('#inbox-search').value==='lodhi'&&hits.length===1&&hits[0]===I.mis,'6 a type filter narrows the same search (query kept)');
+ S.click('.chip[data-filter="All"]');S.Q('#inbox-search').focus();await S.push('inbox_s2');ok(S.Q('#inbox-search').value==='lodhi'&&S.d.activeElement.id==='inbox-search','6 a snapshot update keeps the query and the focus');
+ S.layout('search');
+ /* a match inside a response opens the parent request and brings the response into view */
+ var R=await load('inbox_r1','&read='+I.o1);
+ R.nav('feed');R.click('#btn-search');R.type('#inbox-search','nurse');await sleep(40);
+ var rc=R.cards('#inbox-body');ok(rc.length===1&&rc[0].getAttribute('data-rid')===I.qm&&/Matched in a response/.test(rc[0].textContent)&&/nurse/.test(rc[0].querySelector('.snip').textContent),'7 a reply-text match lists the parent request with the matching response text');
+ R.click(rc[0]);await sleep(120);var flash=R.Q('#sheet .offer.flash');ok(!!flash&&flash.getAttribute('data-pid')===I.o1&&R.d.activeElement===flash,'7 opening it brings THAT response into view and focuses it'+(flash&&R.d.activeElement===flash?'':' [flash='+(flash?flash.getAttribute('data-pid'):'none')+' active='+(R.d.activeElement&&(R.d.activeElement.id||R.d.activeElement.className||R.d.activeElement.tagName))+' offers='+R.QA('#sheet .offer').map(function(o){return o.getAttribute('data-pid')+':'+o.className}).join(',')+']'));
+
+ /* ================= 8. a second response to the same request makes it need attention again ================= */
+ R=await load('inbox_r1');R.nav('activity');
+ ok(!!R.Q('#needs-attention')&&R.cards().length===1&&/New response/.test(R.T('#screen'))&&/1 new/.test(R.Q('[data-nav=activity]').getAttribute('aria-label')),'8 My activity puts a request with a new response under "Needs your attention"');
+ R.click('.card[data-rid="'+I.qm+'"] .btn');await sleep(100);var flash1=R.Q('#sheet .offer.flash');ok(!!flash1&&flash1.getAttribute('data-pid')===I.o1,'8 and its button opens the response itself');
+ R.click('#sheet-close');await sleep(80);ok(!R.Q('#needs-attention')&&R.T('[data-nav=activity] .badge')==='','8 after reading: nothing needs attention');
+ await R.push('inbox_r2');
+ ok(!!R.Q('#needs-attention')&&/New response/.test(R.T('#screen'))&&/1/.test(R.T('[data-nav=activity] .badge')),'8 a SECOND response arrives for the same (already read) request: it needs attention again');
+ R.click('.card[data-rid="'+I.qm+'"] .btn');await sleep(100);ok(R.Q('#sheet .offer.flash').getAttribute('data-pid')===I.o2,'8 the second response is the one brought into view (the first is not re-flagged)');
+ R.click('#sheet-close');
+
+ /* ================= 9. navigation by identifier: two notifications, two destinations; honest fallbacks ================= */
+ var N1=await load('inbox_r2','&read='+[I.o1,I.o2].join(',')+'&open='+encodeURIComponent(JSON.stringify({t:'reply',caseId:I.qm,packetId:I.o1})));
+ await sleep(100);ok(!N1.Q('#sheetroot').hidden&&N1.Q('#sheet .offer.flash')&&N1.Q('#sheet .offer.flash').getAttribute('data-pid')===I.o1,'9 a cold start from a notification opens the reply it was about (response 1)');
+ await N1.push();ok(!!N1.Q('#sheet .offer.flash, #sheet .offer.flashed')&&N1.Q('#sheet .offer.flash, #sheet .offer.flashed').getAttribute('data-pid')===I.o1,'9 when the phone redraws after the message is marked read (as the real app does), the response stays highlighted');
+ var N2=await load('inbox_r2','&read='+[I.o1,I.o2].join(',')+'&open='+encodeURIComponent(JSON.stringify({t:'reply',caseId:I.qm,packetId:I.o2})));
+ await sleep(100);ok(N2.Q('#sheet .offer.flash')&&N2.Q('#sheet .offer.flash').getAttribute('data-pid')===I.o2,'9 another notification for the SAME request opens a DIFFERENT destination (response 2)');
+ N2.w.__pendingOpen={t:'broadcast',caseId:null,packetId:I.upd};N2.w.__relayOpenPending();await sleep(60);
+ var V=await load('inbox_s2','&open='+encodeURIComponent(JSON.stringify({t:'broadcast',caseId:null,packetId:I.upd})));await sleep(100);
+ ok(!V.Q('#sheetroot').hidden&&/Community update/.test(V.T('#sheet-title'))&&/Water is available/.test(V.sheet())&&/Unverified community post/.test(V.sheet()),'9 a community-update notification opens that update in a detail sheet');
+ ok(/Expired|Relevant for/.test(V.sheet())&&/not told/.test(V.sheet()),'9 the sheet states its expiry and that the sender is not told');
+ var E=await load('inbox_s2','&open='+encodeURIComponent(JSON.stringify({t:'request',caseId:I.med,packetId:I.medPkt})));await sleep(100);
+ ok(/Expired\. It is no longer being passed along/.test(E.sheet())&&!/Active for/.test(E.sheet()),'9 an expired request opens as EXPIRED');
+ var G=await load('inbox_s2','&open='+encodeURIComponent(JSON.stringify({t:'request',caseId:'0'.repeat(32),packetId:'1'.repeat(32)})));await sleep(100);
+ ok(/no longer stored on this phone/.test(G.sheet())&&!!G.Q('#missing-back'),'9 a message that is gone gets an honest fallback');G.click('#missing-back');await sleep(80);ok(G.Q('#sheetroot').hidden&&G.Q('[data-nav=feed]').getAttribute('aria-current')==='page','9 and "Back to inbox" returns to the inbox');
+ var RA=await load('inbox_s2');RA.w.__pendingOpen={t:'inbox'};RA.w.__relayOpenPending();await sleep(60);ok(RA.Q('[data-nav=feed]').getAttribute('aria-current')==='page','9 a summary notification opens the inbox');
+ var once=await load('inbox_s2','&open='+encodeURIComponent(JSON.stringify({t:'request',caseId:I.med2,packetId:I.med2Pkt})));await sleep(80);once.click('#sheet-close');once.w.__relayOpenPending();await sleep(50);ok(once.Q('#sheetroot').hidden,'9 a pending open is handed over once: it does not re-open after closing');
+
+ /* ================= 10. Refresh ================= */
+ var F=await load('inbox_s1');F.nav('feed');F.click('#btn-search');F.type('#inbox-search','lodhi');F.Q('#screen').scrollTop=0;
+ F.nav('request');F.type('#f-text','Half written request');F.nav('feed');
+ var before=F.cards('#inbox-body').length;
+ F.click('#btn-refresh');F.click('#btn-refresh');F.click('#btn-refresh');
+ ok(F.calls('refreshNow').length===1&&F.Q('#btn-refresh').getAttribute('aria-busy')==='true'&&/Checking/.test(F.T('#refreshnote')),'10 Refresh shows a busy state, and three rapid taps ask the radio once');
+ ok(F.Q('#inbox-search').value==='lodhi'&&F.cards('#inbox-body').length===before&&F.Q('[data-nav=feed]').getAttribute('aria-current')==='page','10 the tab, the search text and the list are kept');
+ await sleep(5300);ok(F.Q('#btn-refresh').getAttribute('aria-busy')==='false'&&/Nothing new has arrived/.test(F.T('#refreshnote'))&&!/internet/i.test(F.T('#refreshnote')),'10 with nobody nearby it says nothing arrived: "'+F.T('#refreshnote').slice(0,80)+'"');
+ ok(F.cards('#inbox-body').length===before&&F.Q('#banner').hidden,'10 and no message was invented');
+ F.nav('request');ok(F.Q('#f-text').value==='Half written request','10 the half-written request survived the refresh');
+ /* it only claims arrivals that are really in the phone's storage */
+ await sleep(1300);F.nav('feed');F.click('#btn-refresh');await sleep(300);await F.push('inbox_s2');await sleep(5300);
+ ok(/2 new messages arrived|1 new message arrived/.test(F.T('#refreshnote')),'10 when messages really arrived in the phone\'s storage it says so: "'+F.T('#refreshnote').slice(0,60)+'"');
+ var BT=await load('inbox_s1');BT.w.__refreshRes={state:'bluetooth_off'};BT.click('#btn-refresh');ok(/Bluetooth is off/.test(BT.T('#refreshnote'))&&/saved on this phone/.test(BT.T('#refreshnote'))&&BT.Q('#btn-refresh').getAttribute('aria-busy')==='false','10 Bluetooth off: honest message, list still refreshed from this phone');
+ var PM=await load('inbox_s1');PM.w.__refreshRes={state:'permission'};PM.click('#btn-refresh');ok(/permission is off/.test(PM.T('#refreshnote')),'10 permission missing: says so');
+ var UN=await load('inbox_s1');UN.w.__refreshRes={state:'unsupported'};UN.click('#btn-refresh');ok(/no Bluetooth LE/.test(UN.T('#refreshnote')),'10 no BLE: says so');
+ ok(!/server|cloud|online|internet/i.test(F.T('#refreshnote')+BT.T('#refreshnote')+PM.T('#refreshnote')),'10 nothing suggests a server or the internet');
+ var HB=await load('inbox_s1');ok(HB.Q('#btn-refresh').getAttribute('aria-label')==='Check for new messages'&&HB.Q('#btn-refresh').getBoundingClientRect().height>=43.5,'10 the refresh button is labelled and a full-size touch target');
+
+ /* ================= 11. many messages: never one uninterrupted list ================= */
+ var M=await load('inbox_many');M.nav('feed');
+ ok(M.cards('#grp-new').length===4&&!!M.Q('[data-more=new]'),'11 "New to you" shows 4 of '+(M.QA('[data-more=new]').length?'many':'')+' with a "Show more" control');
+ var firstView=M.cards('#inbox-body').length;ok(firstView<=4&&firstView>0,'11 20 unread messages: the first screen shows '+firstView+', not all of them');
+ M.click('[data-more=new]');await sleep(40);ok(M.cards('#grp-new').length>4,'11 "Show more" expands in place');
+ var C2=await load('inbox_many','&read='+['x'].join(','));C2.nav('feed');
+ /* mark everything read through the page's own markRead to see Active / Community limits */
+ var ids=C2.w.RelayNative.snap.packets.map(function(p){return p.id});C2.w.__readExtra={};ids.forEach(function(i){C2.w.__readExtra[i]=1});await C2.push();
+ ok(C2.cards('#grp-active').length<=5&&!!C2.Q('[data-more=active]')&&C2.cards('#grp-updates').length<=3&&!!C2.Q('[data-more=updates]'),'11 read: at most 5 active requests and 3 community updates are shown before "Show more" ('+C2.cards('#grp-active').length+' / '+C2.cards('#grp-updates').length+')');
+ C2.layout('many');
+
+ /* ================= 12. about: system alerts state ================= */
+ var AB=await load('inbox_s1');AB.w.__notif={enabled:false,canAsk:true};AB.click('#btn-info');await sleep(60);
+ ok(/Off\. In-app banners still work/.test(AB.sheet())&&!!AB.Q('#notif-enable'),'12 when Android alerts are off the About sheet says so, and in-app banners still work');AB.click('#notif-enable');ok(AB.calls('requestNotifications').length===1,'12 the button asks Android for permission');
+ var errs=[A,B,C,D,S,R,F,M,N1,N2,V,E,G,Q1,Q2,Q3,Q4,Q5].reduce(function(a,x){return a.concat(x.errs)},[]);ok(errs.length===0,'no runtime errors in any page ('+errs.slice(0,2).join('; ')+')');
+}
+run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n').slice(1,3).join(' | '))}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'});
+</script></body></html>
