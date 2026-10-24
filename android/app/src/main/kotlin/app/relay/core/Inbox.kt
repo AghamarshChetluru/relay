@@ -110,17 +110,19 @@ object Inbox {
     }
 }
 
-/** How a burst of notices becomes notifications: replies to your own requests always stand alone; a flood of the rest becomes one summary. */
+/**
+ * How new messages become Android notifications. ONE message gets its own notification (tapping it opens exactly that message). Two or more become ONE
+ * "N new messages" notification that opens the inbox, so the notification shade never fills with alerts and nothing is ranked by loudness per message.
+ * The summary is loud only when at least one of its messages is important (see [Notice.important]).
+ */
 object NoticePlan {
     sealed class Out {
         class One(val notice: Notice) : Out()
         class Summary(val count: Int, val priority: Boolean) : Out()
     }
-    fun plan(batch: List<Notice>, maxOthers: Int = 2, maxPriority: Int = 4): List<Out> {
-        val out = ArrayList<Out>(); val pri = batch.filter { it.important }; val rest = batch.filter { !it.important }
-        pri.take(maxPriority).forEach { out.add(Out.One(it)) }
-        if (pri.size > maxPriority) out.add(Out.Summary(pri.size - maxPriority, true))
-        if (rest.size <= maxOthers) rest.forEach { out.add(Out.One(it)) } else out.add(Out.Summary(rest.size, false))
-        return out
+    fun plan(batch: List<Notice>): List<Out> = when (batch.size) {
+        0 -> emptyList()
+        1 -> listOf(Out.One(batch[0]))
+        else -> listOf(Out.Summary(batch.size, batch.any { it.important }))
     }
 }

@@ -164,9 +164,12 @@
     var ups = M.receivedBroadcasts(v).map(function (p) { return { p: p, unread: p.originNodeId !== v && !isRead(v, p.id), expired: M.isExpired(p), last: S().inbox[v][p.id] ? S().inbox[v][p.id].tick : p.createdTick }; });
     var shown = cases.filter(function (i) { return i.fits; }), showUps = !filt;
     var byRecent = function (a, b) { return b.last - a.last; };
-    var fresh = shown.filter(function (i) { return i.unread; }).map(function (i) { return { t: 'r', o: i, last: i.last, u: i.urgent }; })
-      .concat(showUps ? ups.filter(function (u) { return u.unread; }).map(function (u) { return { t: 'u', o: u, last: u.last, u: false }; }) : [])
-      .sort(function (a, b) { return (b.u - a.u) || (b.last - a.last); });
+    var vh = myHood().id;
+    /* New to you: still-open messages first (urgent, then close to me or matching my skills, then newest); expired/resolved unread ones follow, newest first. */
+    var freshOrder = function (a, b) { return (b.live - a.live) || (b.score - a.score) || (b.last - a.last); };
+    var fresh = shown.filter(function (i) { return i.unread; }).map(function (i) { return { t: 'r', o: i, last: i.last, live: i.active ? 1 : 0, score: caseScore(i, vh) }; })
+      .concat(showUps ? ups.filter(function (u) { return u.unread; }).map(function (u) { return { t: 'u', o: u, last: u.last, live: u.expired ? 0 : 1, score: 0 }; }) : [])
+      .sort(freshOrder);
     return { all: cases, fresh: fresh, filtered: filt,
       active: sortCases(shown.filter(function (i) { return !i.unread && i.active; })),
       updates: showUps ? ups.filter(function (u) { return !u.unread && !u.expired; }).sort(byRecent) : [],
@@ -182,6 +185,13 @@
     M.receivedBroadcasts(v).forEach(function (p) { if (p.originNodeId !== v && !isRead(v, p.id)) o.feed++; });
     return o;
   }
+  /* What this phone can honestly say about who sent a response: only the area that phone declared in the packet. Not that they are nearby, qualified, or a volunteer. */
+  /* A response to a missing-person report is a possible sighting, not an offer of help. */
+  function viewLabel(view, i) { return i.kind === 'missing' ? String(view.label).replace('Offer received', 'Sighting received').replace('Offer acknowledged', 'Sighting acknowledged') : view.label; }
+  function senderLine(pp) {
+    var base = pp.kind === 'sighting' ? 'Possible sighting from' : 'From';
+    return pp.fromHood ? base + ' a phone that declares ' + pp.fromHood + '.' : base + ' another phone that has Relay.';
+  }
   function nearbyLabel(i) {
     var vh = myHood().id;
     if (!vh || !i.hoodId) return null;
@@ -193,10 +203,11 @@
     if (i.expired) return pill('Expired', 'warn');
     return pill('Active · ' + span(i.left) + ' left', i.left <= 10 ? 'warn' : 'neutral');
   }
+  function caseScore(i, vh) { return (i.urgent ? 4 : 0) + (vh && i.hoodId && M.nearby(vh, i.hoodId) ? 2 : 0) + (ui.filter.help[i.category] ? 1 : 0); }
   function sortCases(list) {
     var vh = myHood().id;
     return list.slice().sort(function (a, b) {
-      function score(i) { return (i.urgent ? 4 : 0) + (vh && i.hoodId && M.nearby(vh, i.hoodId) ? 2 : 0) + (ui.filter.help[i.category] ? 1 : 0); }
+      function score(i) { return caseScore(i, vh); }
       return score(b) - score(a) || b.st.packet.createdTick - a.st.packet.createdTick || (+b.id.slice(1)) - (+a.id.slice(1));
     });
   }
@@ -222,7 +233,7 @@
         i.hasPhoto ? pill(photo && photo.ready ? 'Photo' : 'Photo on the way', 'neutral') : null, (i.hasPrivate && !own) ? pill('Exact address on request', 'neutral') : null,
         i.kind === 'missing' ? pill('Sighting reports unverified', 'neutral') : null),
       h('div', { class: 'meta small' }, own ? 'Your request' : 'Self-reported · Not verified'),
-      h('div', { class: 'cardfoot' }, pill(view.label, view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : view.tone === 'info' ? 'info' : 'neutral'),
+      ((i.expired && view.label === 'Expired') && !(i.active || own)) ? null : h('div', { class: 'cardfoot' }, (i.expired && view.label === 'Expired') ? h('span', {}) : pill(viewLabel(view, i), view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : view.tone === 'info' ? 'info' : 'neutral'),
         (i.active || own) ? h('button', { class: 'link', 'aria-label': action + ': ' + i.title, on: { click: function (e) { e.stopPropagation(); if (own && !firstNewReply && !opts.replyPid) { go('activity'); } else openRequest(i.id, { focusPid: opts.replyPid || firstNewReply || null }); } } }, action, icon('next', 'sm')) : null));
     card.addEventListener('click', function () { openRequest(i.id, { focusPid: opts.replyPid || firstNewReply || null }); });
     return card;
@@ -306,9 +317,10 @@
     if (!hs.due || S().tick < (ui.snooze[v] || 0)) return null;
     if (compact) return h('div', { class: 'locprompt compact', id: 'loc-prompt', role: 'group', 'aria-label': 'Confirm your area' },
       h('strong', {}, 'Still in ' + hs.name + '?'),
-      h('button', { class: 'btn sm primary', id: 'loc-yes', on: { click: function () { M.confirmHood(v); render(); toast('Thanks. Area confirmed.'); } } }, 'Yes'),
-      h('button', { class: 'btn sm', id: 'loc-moved', on: { click: openArea } }, 'I moved'),
-      h('button', { class: 'btn sm', id: 'loc-later', 'aria-label': 'Not now', on: { click: function () { ui.snooze[v] = S().tick + 10; render(); } } }, 'Later'));
+      h('div', { class: 'locact' },
+        h('button', { class: 'btn sm primary', id: 'loc-yes', 'aria-label': 'Yes, still in ' + hs.name, on: { click: function () { M.confirmHood(v); render(); toast('Thanks. Area confirmed.'); } } }, 'Yes'),
+        h('button', { class: 'btn sm', id: 'loc-moved', 'aria-label': 'I moved: update my area', on: { click: openArea } }, 'I moved'),
+        h('button', { class: 'btn sm', id: 'loc-later', 'aria-label': 'Not now', on: { click: function () { ui.snooze[v] = S().tick + 10; render(); } } }, 'Later')));
     return h('div', { class: 'locprompt', id: 'loc-prompt', role: 'group', 'aria-label': 'Confirm your area' },
       h('strong', {}, 'Are you still in ' + hs.name + '?'), h('span', { class: 'muted small' }, 'Confirming helps requests reach the right people.'),
       h('div', { class: 'stack' },
@@ -674,12 +686,12 @@
       var steps = h('ul', { class: 'steps' },
         h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Saved on your phone')),
         h('li', { class: shared ? 'done' : '' }, h('span', { class: 'dot' }, ''), h('div', {}, shared ? 'Shared with a nearby phone' : 'Not yet shared with a nearby phone', h('small', {}, shared ? 'Your phone handed it to a neighbour.' : (M.peers(v) ? 'Waiting for the next step.' : 'No nearby phone with Relay right now.')))),
-        h('li', { class: reps.length ? 'done' : '' }, h('span', { class: 'dot' }, ''), h('div', {}, reps.length ? (reps.length === 1 ? 'An offer has arrived' : reps.length + ' offers have arrived') : 'No offer has reached this phone yet', reps.length ? h('small', {}, 'Unverified. Review it before acting.') : null)),
-        reps.length ? h('li', { class: acked ? 'done' : '' }, h('span', { class: 'dot' }, ''), h('div', {}, acked ? 'You acknowledged an offer' : 'Not acknowledged yet')) : null,
+        h('li', { class: reps.length ? 'done' : '' }, h('span', { class: 'dot' }, ''), h('div', {}, reps.length ? (i.kind === 'missing' ? (reps.length === 1 ? 'A possible sighting has arrived' : reps.length + ' possible sightings have arrived') : (reps.length === 1 ? 'An offer has arrived' : reps.length + ' offers have arrived')) : (i.kind === 'missing' ? 'No possible sighting has reached this phone yet' : 'No offer has reached this phone yet'), reps.length ? h('small', {}, 'Unverified. Review it before acting.') : null)),
+        reps.length ? h('li', { class: acked ? 'done' : '' }, h('span', { class: 'dot' }, ''), h('div', {}, acked ? 'You acknowledged ' + (i.kind === 'missing' ? 'a possible sighting' : 'an offer') : 'Not acknowledged yet')) : null,
         i.expired ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Stopped being passed along', h('small', {}, 'Your original request stays here.'))) : null,
         i.renewed ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Renewed ' + i.st.version + (i.st.version === 1 ? ' time' : ' times'), h('small', {}, 'Same case, updated details.'))) : null,
         res ? h('li', { class: 'done' }, h('span', { class: 'dot' }, ''), h('div', {}, 'Marked resolved on this phone')) : null);
-      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(view.label, view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : 'info')),
+      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(viewLabel(view, i), view.tone === 'ok' ? 'good' : view.tone === 'warn' ? 'warn' : 'info')),
         h('h3', {}, i.title), h('div', { class: 'meta' }, icon('pin', 'sm'), h('span', {}, (i.area ? i.area + ' · ' : '') + i.hoodName + ' · Created ' + age(i.r.createdTick))),
         h('div', { class: 'row tags' }, validityPill(i)), steps,
         view.note ? h('div', { class: 'help', style: 'margin:0 0 8px' }, view.note) : null,
@@ -689,7 +701,7 @@
     }
     function sentCard(i) {
       var view = M.requestView(v, i.id);
-      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(view.label, view.tone === 'ok' ? 'good' : 'info')),
+      el.appendChild(h('article', { class: 'card' + (i.active ? '' : ' past') + (i.unread ? ' unread' : ''), 'data-rid': i.id, 'data-unread': i.unread ? '1' : '0' }, h('div', { class: 'cardtop' }, h('div', { class: 'row' }, i.unread ? h('span', { class: 'dotnew', 'aria-hidden': 'true' }) : null, pill(catLabel(i), i.urgent ? 'urgent' : 'info'), i.unread ? pill(newLabel(i), 'info') : null), pill(viewLabel(view, i), view.tone === 'ok' ? 'good' : 'info')),
         h('h3', {}, i.title), h('div', { class: 'row tags' }, validityPill(i)), view.note ? h('div', { class: 'help' }, view.note) : null,
         h('button', { class: 'btn soft block', style: 'margin-top:10px', on: { click: function () { openRequest(i.id, { focusPid: i.att.replyKeys.filter(function (k) { return !isRead(v, k); })[0] || null }); } } }, 'Open request')));
     }
@@ -756,9 +768,9 @@
     } else {
       det.appendChild(drow('Where', whereText(i.area, i.hoodName)));
       var own = M.ownAddress(v, rid), shared = M.sharedAddressAt(v, rid);
-      if (own) det.appendChild(drow('Exact address', 'Saved on this phone only. Share it with a volunteer from their offer below.'));
+      if (own) det.appendChild(drow('Exact address', 'Saved on this phone only. You can share it with one sender, from their offer below.'));
       else if (shared) det.appendChild(h('div', { class: 'addrbox' }, h('strong', {}, 'Exact address (shared with you by the requester)'), h('div', {}, shared.building || '—'), shared.directions ? h('div', { class: 'muted' }, shared.directions) : null, h('div', { class: 'help' }, 'Shared with you only. Please keep it private.')));
-      else if (pl.hasPrivate) det.appendChild(drow('Exact address', 'Available. The requester can share it with a volunteer who offers help.'));
+      else if (pl.hasPrivate) det.appendChild(drow('Exact address', 'Available. The requester can share it with one person who offers help.'));
     }
     det.appendChild(drow('Posted', age(r.createdTick) + (i.renewed ? ' · renewed ' + age(cs.packet.createdTick) : '')));
     det.appendChild(drow('Status', i.resolved ? 'Resolved' : i.expired ? 'Expired. It is no longer being passed along.' : 'Active for ' + span(i.left) + ' more'));
@@ -773,15 +785,15 @@
         var pp = p.payload, acked = M.ackedBy(v, p.id), nr = S().local[v].notRelevant[p.id], hasAddr = !!M.ownAddress(v, rid), sharedAddr = M.addressSharedFor(v, p.id);
         var box = h('div', { class: 'offer', 'data-pid': p.id }, h('strong', {}, pp.kind === 'sighting' ? 'Possible sighting · Unverified' : 'Offer of help · Unverified'),
           h('p', { style: 'margin:6px 0' }, pp.note), pp.area ? h('div', { class: 'meta' }, icon('pin', 'sm'), h('span', {}, pp.area)) : null,
-          h('div', { class: 'help' }, 'From a nearby volunteer' + (pp.fromHood ? ' in ' + pp.fromHood : '') + '; what they say about themselves is not verified. A response is not proof of safety or that help has arrived.'));
-        if (acked) box.appendChild(h('div', { class: 'row', style: 'margin-top:8px' }, pill('Acknowledged on this phone', 'good'), h('span', { class: 'help', style: 'margin:0' }, 'The volunteer learns this only when it reaches their phone.')));
+          h('div', { class: 'help' }, senderLine(pp) + ' ' + (pp.kind === 'sighting' ? 'What it says is not verified. A possible sighting is not proof that the person was seen or found.' : 'What it says about the sender is not verified. A response is not proof of safety or that help has arrived.')));
+        if (acked) box.appendChild(h('div', { class: 'row', style: 'margin-top:8px' }, pill('Acknowledged on this phone', 'good'), h('span', { class: 'help', style: 'margin:0' }, 'The sender learns this only when it reaches their phone.')));
         else if (nr) box.appendChild(h('div', { class: 'help' }, 'Marked not relevant.'));
         else if (!resolved) box.appendChild(h('div', { class: 'row', style: 'margin-top:10px' },
-          h('button', { class: 'btn primary sm', 'data-act': 'ack', on: { click: function () { var x = M.createAck(v, p.id); toast(x.ok ? 'Acknowledgment saved on this phone. It travels back when a path exists.' : x.error); render(); refreshSheet(); } } }, 'Acknowledge offer'),
+          h('button', { class: 'btn primary sm', 'data-act': 'ack', on: { click: function () { var x = M.createAck(v, p.id); toast(x.ok ? 'Acknowledgment saved on this phone. It travels back when a path exists.' : x.error); render(); refreshSheet(); } } }, pp.kind === 'sighting' ? 'Acknowledge sighting' : 'Acknowledge offer'),
           h('button', { class: 'btn sm', 'data-act': 'irrelevant', on: { click: function () { M.setNotRelevant(v, p.id); refreshSheet(); } } }, 'Not relevant')));
         if (hasAddr && !nr && pp.kind === 'offer') {
-          if (sharedAddr) box.appendChild(h('div', { class: 'help', style: 'margin-top:8px' }, 'Exact address sent to this volunteer only. It travels back like any message.'));
-          else box.appendChild(h('button', { class: 'btn soft block', style: 'margin-top:8px', 'data-act': 'share-address', on: { click: function () { var x = M.shareAddress(v, p.id); toast(x.ok ? 'Exact address shared with this volunteer only.' : x.error); refreshSheet(); } } }, 'Share my exact address with this volunteer'));
+          if (sharedAddr) box.appendChild(h('div', { class: 'help', style: 'margin-top:8px' }, 'Exact address sent to this sender only. It travels back like any message.'));
+          else box.appendChild(h('button', { class: 'btn soft block', style: 'margin-top:8px', 'data-act': 'share-address', on: { click: function () { var x = M.shareAddress(v, p.id); toast(x.ok ? 'Exact address shared with this volunteer only.' : x.error); refreshSheet(); } } }, 'Share my exact address with this sender'));
         }
         el.appendChild(box);
       });
@@ -929,7 +941,7 @@
       if (shared) el.appendChild(h('div', { class: 'help', id: 'share-result' }, shared.ok ? 'Sharing opened. File check code (SHA-256): ' + shared.sha256 : (shared.error || 'Could not share')));
       el.appendChild(h('ul', { class: 'muted small', style: 'margin-top:14px' },
         h('li', {}, 'Offers, sightings and community updates are unverified.'),
-        h('li', {}, 'Exact addresses are encrypted to the volunteer you choose; phones that carry the message cannot read them. This has not had an independent security review.'),
+        h('li', {}, 'Exact addresses are encrypted to the one sender you choose; phones that carry the message cannot read them. This has not had an independent security review.'),
         h('li', {}, 'Relay may slow down or stop when the phone saves battery. Keep Relay on and the notification visible for best results.'),
         h('li', {}, 'Requests stay active for the time you choose; missing-person requests 24 hours; community updates 45 minutes.')));
       return el;
@@ -1010,7 +1022,7 @@
     var n = b.cur, more = b.q.length;
     clear(el); el.hidden = false; el.className = 'banner' + (n.priority ? ' priority' : ''); el.setAttribute('data-event', n.eventId || '');
     function open() { var x = b.cur; if (!x) return; hideBanner(); openMessage(x.ref); showBanner(); }
-    el.appendChild(h('div', { class: 'bmsg', id: 'banner-msg', on: { click: open } }, h('strong', {}, n.line), h('small', {}, more ? more + ' more important ' + (more === 1 ? 'message' : 'messages') : (n.summary ? 'Tap to see them in your inbox' : 'Received on this phone. Tap to open'))));
+    el.appendChild(h('div', { class: 'bmsg', id: 'banner-msg', on: { click: open } }, h('strong', {}, n.line), h('small', {}, more ? more + ' more important ' + (more === 1 ? 'message' : 'messages') : (n.summary ? 'Tap to open and check them' : 'Received on this phone. Tap to open'))));
     el.appendChild(h('button', { class: 'bopen', id: 'banner-open', on: { click: open } }, n.action));
     el.appendChild(h('button', { class: 'bx', id: 'banner-dismiss', 'aria-label': 'Dismiss notification', on: { click: function () { hideBanner(); showBanner(); } } }, icon('x')));
     clearTimeout(b.timer); b.timer = setTimeout(function () { if (el.contains(document.activeElement)) { showBanner(); return; } hideBanner(); showBanner(); }, 45000);       // long enough that someone who opens the app a little late still sees it
@@ -1022,7 +1034,7 @@
     var fresh = (events || []).filter(function (e) { var k = e.eventId || (e.ref && e.ref.packetId) || e.line; if (ui.announced[k]) return false; ui.announced[k] = true; return !!e.priority && ui.popups !== 'off' && !e.stale; });
     if (!fresh.length) return;
     var b = ui.banner, pool = (b.cur ? [b.cur] : []).concat(b.q, fresh);
-    if (pool.length > 2) pool = [{ kind: 'summary', summary: true, priority: true, eventId: 'summary-' + Date.now(), ref: { t: 'inbox' }, line: pool.length + ' important messages arrived', action: 'Open inbox' }];   // a burst becomes ONE pop-up
+    if (pool.length > 1) pool = [{ kind: 'summary', summary: true, priority: true, eventId: 'summary-' + Date.now(), ref: { t: 'inbox' }, line: pool.length + ' new messages', action: 'Open inbox' }];   // two or more become ONE pop-up that opens the inbox
     b.cur = pool[0]; b.q = pool.slice(1); showBanner();
   };
   /* The browser prototype has no radio, so its banners come from packets that arrive in its own simulated clock: the same rules the Android engine applies. */

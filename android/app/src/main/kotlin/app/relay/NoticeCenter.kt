@@ -16,6 +16,7 @@ object NoticeCenter {
     private val main = Handler(Looper.getMainLooper())
     private val batch = ArrayList<Notice>()
     private var scheduled = false                    // one flush pending at a time, whatever else happened in between
+    private val flushTask = Runnable { flush() }     // one cancellable task, so a reset can never leave an old timer to fire into later work
     /** Notices waiting for the open app to show them as banners. Drained by NativeBridge.takeIncoming(). */
     val incoming = CopyOnWriteArrayList<Notice>()
     @Volatile var appContext: Context? = null
@@ -29,7 +30,7 @@ object NoticeCenter {
         if (RelayRuntime.foreground) {                      // the app is open: only IMPORTANT messages interrupt with a pop-up; the rest just appear in the inbox (badge, "New to you")
             if (n.important) { incoming.add(n); while (incoming.size > 20) incoming.removeAt(0) }
             RelayRuntime.notifyChanged(); return }
-        synchronized(batch) { batch.add(n); if (!scheduled) { scheduled = true; main.postDelayed({ flush() }, WINDOW_MS) } }
+        synchronized(batch) { batch.add(n); if (!scheduled) { scheduled = true; main.postDelayed(flushTask, WINDOW_MS) } }
     }
 
     /** A renewal that only extended the time carries the earlier version's read state, so one request never turns unread twice. (Runs before housekeeping removes the old version.) */
@@ -68,8 +69,10 @@ object NoticeCenter {
     }
     /** The person opened the message from its notification (or by hand): it must not pop up again. */
     fun forget(store: Store, eventIds: Collection<String>) { eventIds.forEach { store.setFlag(POPPED, it) } }
+    /** The person tapped the "N new messages" notification: they are looking at the inbox, so nothing parked for a pop-up needs to greet them again. */
+    fun forgetAllParked(store: Store) { store.flags(POPUP).forEach { store.setFlag(POPPED, it) } }
     private const val POPUP = "popup"; private const val POPPED = "popped"
     /** Tests only: forget everything pending. */
-    internal fun resetForTest() { synchronized(batch) { batch.clear(); scheduled = false }; incoming.clear() }
+    internal fun resetForTest() { main.removeCallbacks(flushTask); synchronized(batch) { batch.clear(); scheduled = false }; incoming.clear() }
     fun drainIncoming(): List<Notice> { val l = incoming.toList(); incoming.clear(); return l }
 }

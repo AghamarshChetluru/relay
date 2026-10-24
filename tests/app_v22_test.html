@@ -186,9 +186,9 @@ async function run(){
  X.until(function(){return replies.every(function(r){return M.nodeHas(A,r)})},120);skip(10);persona('A');click('[data-nav=activity]');click(btn('View response')||btn('Review offer'));
  ok(QA('#sheet .offer[data-pid]').length===2&&/first-aid kit/.test(sheet())&&/retired nurse/.test(sheet()),'requester sees both offers as separate cards, labelled unverified');layout('two offers');
  /* ===== 9. exact address shared intentionally ===== */
- var shareBtns=QA('#sheet [data-act=share-address]');ok(shareBtns.length===2,'"Share my exact address with this volunteer" offered per offer');
+ var shareBtns=QA('#sheet [data-act=share-address]');ok(shareBtns.length===2,'"Share my exact address with this sender" offered per offer');
  var firstReply=QA('#sheet .offer[data-pid]').filter(function(o){return /first-aid/.test(o.textContent)})[0];click(firstReply.querySelector('[data-act=share-address]'));
- ok(/Exact address sent to this volunteer only/.test(QA('#sheet .offer[data-pid]').filter(function(o){return /first-aid/.test(o.textContent)})[0].textContent)&&QA('#sheet [data-act=share-address]').length===1,'address shared with one volunteer only; button gone for that offer');
+ ok(/Exact address sent to this sender only/.test(QA('#sheet .offer[data-pid]').filter(function(o){return /first-aid/.test(o.textContent)})[0].textContent)&&QA('#sheet [data-act=share-address]').length===1,'address shared with one volunteer only; button gone for that offer');
  click('#sheet-close');
  persona('E');click('[data-nav=activity]');click(btn('Open request'));ok(!/Flat 4B/.test(sheet())&&/Available\. The requester can share it/.test(sheet()),'volunteer sees "address available on request", not the address, before it arrives');click('#sheet-close');
  var addrPid=Object.keys(S().packets).filter(function(k){return S().packets[k].type==='address'})[0];X.until(function(){return M.nodeHas(E,addrPid)},100);

@@ -73,6 +73,7 @@ class MainActivity : Activity(), NativeBridge.Host {
         val ref = Notifier.refFrom(i) ?: return
         i.putExtra(HANDLED, true)                // an Intent re-delivered by the system (rotation, recreation) must not re-open the same message
         RelayRuntime.pendingOpen = ref
+        if (ref.t == "inbox") { NoticeCenter.forgetAllParked(RelayRuntime.engine(this).store); Notifier.cancelSummaries(this) }
         if (ref.packetId != null) { Notifier.cancelEvents(this, listOf(ref.packetId)); NoticeCenter.forget(RelayRuntime.engine(this).store, listOf(ref.packetId)) }
         if (::web.isInitialized) main.post { web.evaluateJavascript("window.__relayOpenPending&&window.__relayOpenPending()", null) }
     }

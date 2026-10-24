@@ -40,7 +40,7 @@ async function run(){
  ok(/Review offer|View response/.test(urg.textContent),'the offer is reachable from the activity card ('+(/View response/.test(urg.textContent)?'View response, because it is unread':'Review offer')+')');B.click(B.btn('View response')||B.btn('Review offer'));
  ok(/Offer of help · Unverified/.test(B.sheet())&&/I am a nurse nearby/.test(B.sheet())&&/not proof/.test(B.sheet()),'offer text from the volunteer, labelled unverified');B.layout('offer sheet');
  B.click('[data-act=ack]');ok(B.calls('createAck').length===1&&B.calls('createAck')[0][1]===meta.requesterReplyId,'Acknowledge sends the REAL reply packet id to native');
- var sh=B.Q('[data-act=share-address]');ok(!!sh,'"Share my exact address with this volunteer" offered (private address exists on this phone)');B.click(sh);ok(B.calls('shareAddress').length===1&&B.calls('shareAddress')[0][1]===meta.requesterReplyId,'address share goes to native for that one reply');
+ var sh=B.Q('[data-act=share-address]');ok(!!sh,'"Share my exact address with this sender" offered (private address exists on this phone)');B.click(sh);ok(B.calls('shareAddress').length===1&&B.calls('shareAddress')[0][1]===meta.requesterReplyId,'address share goes to native for that one reply');
  B.click('#btn-resolve');ok(B.calls('createResolve').length===1&&B.calls('createResolve')[0][1]===meta.urgentCase,'Mark resolved calls native with the case id');
  B.click('#sheet-close');
  B.w.__drawnImage=B.drawn();var mis=B.Q('#screen article[data-rid="'+meta.missingCase+'"]');B.click(mis.querySelector('button.soft, button.primary')||mis.querySelector('button'));

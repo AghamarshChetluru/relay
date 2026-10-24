@@ -1,16 +1,20 @@
 <!DOCTYPE html><html><body style="margin:0;background:#dfe6ef"><script>
-/* Screenshots of the real bundled UI (exact APK web assets) on real-engine snapshots. usage: inbox_shots.html?s=inbox|search|banner|activity|refresh|detail|many&w=390&h=844&base=... */
+/* Screenshots of the real bundled UI (exact APK web assets) on real-engine snapshots. usage: inbox_shots.html?s=inbox|search|banner|activity|refresh|detail|many|mixed|mixedsearch|sender|sighting&w=390&h=844&base=... */
 var q=new URLSearchParams(location.search),W=+q.get('w')||390,HH=+q.get('h')||844,BASE=q.get('base'),S=q.get('s')||'inbox';
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 var f=document.createElement('iframe');f.style.cssText='width:'+W+'px;height:'+HH+'px;border:0;display:block;background:#fff';
-var fx={inbox:'inbox_s1',search:'inbox_s2',banner:'inbox_s2',activity:'inbox_r2',refresh:'inbox_s1',detail:'inbox_r2',many:'inbox_many'}[S];
+var fx={inbox:'inbox_s1',search:'inbox_s2',banner:'inbox_s2',activity:'inbox_r2',refresh:'inbox_s1',detail:'inbox_r2',many:'inbox_many',mixed:'inbox_mixed',mixedsearch:'inbox_mixed',mixedall:'inbox_mixed',sender:'inbox_senders',sighting:'inbox_senders'}[S];
 var extra={search:'&read=x',banner:'',activity:'',refresh:'',detail:''}[S]||'';
 f.src='file://'+BASE+'/app_test.html?fx='+fx+extra;document.body.appendChild(f);
 f.onload=function(){setTimeout(async function(){
  var w=f.contentWindow,d=w.document,Q=function(s){return d.querySelector(s)},I=w.__INBOX;
  function click(s){var e=typeof s==='string'?Q(s):s;e.click()}
  try{
-  if(S==='inbox'||S==='many'){click('[data-nav=feed]')}
+  if(S==='inbox'||S==='many'||S==='mixed'){click('[data-nav=feed]')}
+  else if(S==='mixedall'){click('[data-nav=feed]');var m=Q('[data-more=new]');if(m)m.click()}
+  else if(S==='mixedsearch'){click('[data-nav=feed]');click('#btn-search');var i2=Q('#inbox-search');i2.value='blankets';i2.dispatchEvent(new w.Event('input',{bubbles:true}))}
+  else if(S==='sender'){w.__pendingOpen={t:'reply',caseId:I.sh,packetId:I.shGp};w.__relayOpenPending()}
+  else if(S==='sighting'){w.__pendingOpen={t:'reply',caseId:I.sm,packetId:I.smLc};w.__relayOpenPending()}
   else if(S==='search'){click('[data-nav=feed]');click('#btn-search');var i=Q('#inbox-search');i.value='lodhi colony';i.dispatchEvent(new w.Event('input',{bubbles:true}))}
   else if(S==='banner'){w.__readExtra[I.misPkt]=1;w.__readExtra[I.medPkt]=1;w.__readExtra[I.upd]=1;click('[data-nav=feed]');w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Medical assistance requested · Lodhi Colony',action:'Open message',priority:true,eventId:'shot'}];w.__relayChanged()}
   else if(S==='activity'){click('[data-nav=activity]')}

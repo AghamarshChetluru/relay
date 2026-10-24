@@ -115,17 +115,22 @@ class InboxTest {
         val rep = ok(near.engine.createReply(urgent.caseId!!, "offer", "coming", "")); val wa = watch(a); give(near, a, rep.packetId!!)
         assertTrue("a response to MY request always does", wa.notes[0]!!.important)
         val plan = NoticePlan.plan(listOf(wn.notes[2]!!, wn.notes[3]!!, wn.notes[1]!!, wn.notes[0]!!))
-        assertTrue("only the important one stands alone; the quiet ones are not promoted", (plan[0] as NoticePlan.Out.One).notice.important)
+        assertEquals("four messages are ONE summary, however important some are", 1, plan.size)
+        assertTrue("the summary is loud only because one of them is important", (plan[0] as NoticePlan.Out.Summary).priority)
+        val quiet = NoticePlan.plan(listOf(wn.notes[2]!!, wn.notes[3]!!, wn.notes[1]!!))
+        assertFalse("quiet messages never make a loud summary", (quiet[0] as NoticePlan.Out.Summary).priority)
     }
 
-    @Test fun burstsAreBatchedAndResponsesStandAlone() {
+    @Test fun oneMessageIsItsOwnNotificationAndTwoOrMoreAreOneSummary() {
         fun n(k: NoticeKind, i: Int) = Notice(k, Ref("request", "c".repeat(31) + i, "p".repeat(31) + i).let { Ref(it.t, "0".repeat(31) + i, "1".repeat(31) + i) }, "t$i", "", "", false, "e$i")
-        val few = NoticePlan.plan(listOf(n(NoticeKind.REQUEST, 1), n(NoticeKind.BROADCAST, 2)))
-        assertEquals(2, few.size); assertTrue(few.all { it is NoticePlan.Out.One })
+        assertTrue(NoticePlan.plan(emptyList()).isEmpty())
+        val one = NoticePlan.plan(listOf(n(NoticeKind.REPLY, 1)))
+        assertTrue("a single message opens exactly that message", one.size == 1 && one[0] is NoticePlan.Out.One)
+        val two = NoticePlan.plan(listOf(n(NoticeKind.REQUEST, 1), n(NoticeKind.BROADCAST, 2)))
+        assertTrue("two messages: one 'N new messages' notification, not two", two.size == 1 && (two[0] as NoticePlan.Out.Summary).count == 2 && !(two[0] as NoticePlan.Out.Summary).priority)
         val burst = NoticePlan.plan((1..7).map { n(NoticeKind.REQUEST, it) } + n(NoticeKind.REPLY, 8))
-        assertEquals("one standalone response and ONE summary for seven requests", 2, burst.size)
-        assertTrue(burst[0] is NoticePlan.Out.One && (burst[0] as NoticePlan.Out.One).notice.kind == NoticeKind.REPLY)
-        assertEquals(7, (burst[1] as NoticePlan.Out.Summary).count)
+        assertEquals("seven requests and a response: still one notification", 1, burst.size)
+        assertEquals(8, (burst[0] as NoticePlan.Out.Summary).count); assertTrue((burst[0] as NoticePlan.Out.Summary).priority)
         val ids = (1..8).map { n(NoticeKind.REQUEST, it).ref.key }.toSet(); assertEquals("every destination key is unique", 8, ids.size)
     }
 

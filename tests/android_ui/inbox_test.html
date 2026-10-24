@@ -79,7 +79,7 @@ async function run(){
  var Q2b=await load('inbox_s1','&keep=1');Q2b.nav('feed');ok(Q2b.w.RelayUI.ui.popups==='off','4c the setting is remembered after a restart');
  var Q3=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q3.nav('feed');
  Q3.w.__incoming=[1,2,3].map(function(i){return {kind:'reply',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Someone sent a response #'+i,action:'View response',priority:true,eventId:'e-burst'+i}});await Q3.push('inbox_s2');
- ok(!Q3.Q('#banner').hidden&&/3 important messages arrived/.test(Q3.T('#banner'))&&Q3.QA('#banner-open').length===1,'4d three important messages at once become ONE pop-up: "'+Q3.T('#banner strong')+'"');
+ ok(!Q3.Q('#banner').hidden&&/3 new messages/.test(Q3.T('#banner'))&&/Tap to open and check/.test(Q3.T('#banner'))&&Q3.QA('#banner-open').length===1,'4d three important messages at once become ONE "3 new messages" pop-up: "'+Q3.T('#banner strong')+'"');
  Q3.click('#banner-msg');await sleep(80);ok(Q3.Q('#banner').hidden&&Q3.Q('[data-nav=feed]').getAttribute('aria-current')==='page','4e tapping the pop-up text (not only the button) opens it; a summary opens the inbox');
  var Q4=await load('inbox_s1','&read='+[I.misPkt,I.medPkt,I.upd].join(','));Q4.nav('feed');
  Q4.w.__incoming=[{kind:'request',ref:{t:'request',caseId:I.med2,packetId:I.med2Pkt},line:'Medical assistance requested · Lodhi Colony',action:'Open message',priority:true,eventId:'e-tap'}];await Q4.push('inbox_s2');
@@ -178,6 +178,48 @@ async function run(){
  /* ================= 12. about: system alerts state ================= */
  var AB=await load('inbox_s1');AB.w.__notif={enabled:false,canAsk:true};AB.click('#btn-info');await sleep(60);
  ok(/Off\. In-app banners still work/.test(AB.sheet())&&!!AB.Q('#notif-enable'),'12 when Android alerts are off the About sheet says so, and in-app banners still work');AB.click('#notif-enable');ok(AB.calls('requestNotifications').length===1,'12 the button asks Android for permission');
+ /* ================= 13. final polish: ordering of unread open vs expired messages, one "Expired", honest sender wording, compact area reminder ================= */
+ var XM=await load('inbox_mixed');XM.nav('feed');var MI=XM.w.__INBOX;
+ var guard=0;while(XM.Q('[data-more=new]')&&guard++<5){XM.click('[data-more=new]');await sleep(40)}
+ var keyOf=function(c){return c.getAttribute('data-rid')||('u:'+c.getAttribute('data-pid'))};
+ var order=XM.cards('#grp-new').map(keyOf),states=XM.cards('#grp-new').map(function(c){return c.getAttribute('data-state')||(/Expired/.test(c.textContent)?'expired':'active')});
+ ok(order.length===7,'13 all seven unread messages are in "New to you" ('+order.length+')');
+ ok(order[0]===MI.mxUN&&order[1]===MI.mxUF&&order[2]===MI.mxN,'13 unread OPEN requests come first: urgent+close, then urgent, then ordinary close ('+order.slice(0,3).map(function(k){return k.slice(0,4)}).join(',')+')');
+ ok(states.slice(0,3).every(function(x){return x==='active'})&&states.slice(3).every(function(x){return x!=='active'}),'13 every expired/resolved unread message comes AFTER every open one, although it arrived more recently ('+states.join(',')+')');
+ ok(order.indexOf(MI.mxEU)<order.indexOf(MI.mxEN)&&order.indexOf(MI.mxEN)<order.indexOf('u:'+MI.mxEB),'13 among expired ones urgency/closeness/recency still order them (expired urgent, expired ordinary, expired community update)');
+ var seen13={};XM.cards().forEach(function(c){var k=keyOf(c);seen13[k]=(seen13[k]||0)+1});ok(Object.keys(seen13).length===7&&Object.keys(seen13).every(function(k){return seen13[k]===1}),'13 no message is repeated across groups');
+ ['mxEU','mxEN'].forEach(function(k){var c=XM.Q('.card[data-rid="'+MI[k]+'"]'),n=(c.textContent.match(/Expired/g)||[]).length;ok(n===1,'13 '+k+' says "Expired" exactly once on its card ('+n+')');
+  ok(!c.querySelector('.link')&&c.getAttribute('data-unread')==='1'&&!!c.querySelector('.dotnew'),'13 '+k+' offers no action link, but is still marked unread')});
+ var ebc=XM.Q('.card[data-pid="'+MI.mxEB+'"]');ok(!!ebc&&(ebc.textContent.match(/Expired/g)||[]).length===1,'13 an expired community update also says "Expired" once');
+ var rsc=XM.Q('.card[data-rid="'+MI.mxRS+'"]');ok(!!rsc&&rsc.getAttribute('data-state')==='resolved'&&/Resolved/.test(rsc.textContent)&&!/Expired/.test(rsc.textContent),'13 a resolved request is shown as Resolved, not Expired, and sits behind open ones');
+ XM.layout('mixed');
+ /* expired unread stays findable and cannot be replied to */
+ XM.click('#btn-search');await sleep(60);XM.type('#inbox-search','blankets');await sleep(80);
+ ok(XM.cards('#inbox-body').some(function(c){return c.getAttribute('data-rid')===MI.mxEN}),'13 an expired unread request is still found by search');
+ XM.type('#inbox-search','tea is available');await sleep(80);ok(XM.cards('#inbox-body').some(function(c){return c.getAttribute('data-pid')===MI.mxEB}),'13 an expired community update is still found by search');
+ XM.type('#inbox-search','');await sleep(60);
+ XM.w.RelayUI.openMessage({t:'request',caseId:MI.mxEU});await sleep(120);
+ ok(/Expired/.test(XM.sheet())&&!XM.Q('#r-form')&&!XM.Q('#r-submit')&&/responses are closed/.test(XM.sheet()),'13 opening an expired request shows Expired and offers no way to respond');
+ ok(!/Active for/.test(XM.sheet()),'13 and does not call it active');
+ XM.click('#sheet-close');await sleep(60);
+ var after=XM.cards('#grp-new').map(keyOf);ok(after.indexOf(MI.mxEU)===-1&&XM.cards().filter(function(c){return c.getAttribute('data-rid')===MI.mxEU}).length<=1,'13 once opened the expired request leaves "New to you" and is never listed twice');
+ /* sender wording */
+ var SN=await load('inbox_senders');var SI=SN.w.__INBOX;
+ SN.w.RelayUI.openMessage({t:'reply',caseId:SI.sh,packetId:SI.shGp});await sleep(150);
+ var gpBox=SN.Q('#sheet .offer[data-pid="'+SI.shGp+'"]'),noBox=SN.Q('#sheet .offer[data-pid="'+SI.shNo+'"]');
+ ok(!!gpBox&&/From a phone that declares Green Park\./.test(gpBox.textContent),'13 an offer says "From a phone that declares Green Park." (what the packet carries)');
+ ok(!!noBox&&/From another phone that has Relay\./.test(noBox.textContent)&&!/declares/.test(noBox.textContent),'13 with no declared area the sender line is neutral');
+ ok(!/nearby volunteer|volunteer/i.test(SN.sheet())&&/not verified/i.test(gpBox.textContent)&&/Offer of help · Unverified/.test(gpBox.textContent),'13 nothing calls the sender a volunteer or nearby, and every offer stays Unverified');
+ SN.click('#sheet-close');await sleep(60);SN.w.RelayUI.openMessage({t:'reply',caseId:SI.sm,packetId:SI.smLc});await sleep(150);
+ var sgBox=SN.Q('#sheet .offer[data-pid="'+SI.smLc+'"]');ok(!!sgBox&&/Possible sighting from a phone that declares Lodhi Colony\./.test(sgBox.textContent)&&/Possible sighting · Unverified/.test(sgBox.textContent)&&!/offer|volunteer|help has arrived/i.test(sgBox.textContent.replace(/Possible sighting/g,'')),'13 a missing-person response is a possible sighting, never an offer or a volunteer');
+ /* compact area reminder */
+ var RM=await load('inbox_s1');RM.nav('feed');await sleep(60);
+ var lp=RM.Q('#loc-prompt');
+ if(lp){var rr=lp.getBoundingClientRect();ok(rr.height<=(W<=370?112:76),'13 the area reminder is compact: '+Math.round(rr.height)+'px tall @'+W);
+  ok(['#loc-yes','#loc-moved','#loc-later'].every(function(s){var b=RM.Q(s),r=b.getBoundingClientRect();return r.height>=43.5&&r.width>=43.5&&r.right<=W+0.5&&r.left>=0}),'13 all three actions stay on screen with 44px targets');
+  var fc=RM.Q('#inbox-body .card,#screen .card');var top=fc?fc.getBoundingClientRect().top:9999;ok(top<HH*0.62,'13 the first message starts at '+Math.round(top)+'px of '+HH+'px: visible without scrolling');
+  RM.layout('reminder')}
+ else ok(false,'13 the area reminder was expected on this fixture');
  var errs=[A,B,C,D,S,R,F,M,N1,N2,V,E,G,Q1,Q2,Q3,Q4,Q5].reduce(function(a,x){return a.concat(x.errs)},[]);ok(errs.length===0,'no runtime errors in any page ('+errs.slice(0,2).join('; ')+')');
 }
 run().catch(function(e){out.push('EXC '+e.message+' '+(e.stack||'').split('\n').slice(1,3).join(' | '))}).then(function(){document.getElementById('out').textContent='RESULTS w='+W+'\n'+out.join('\n')+'\nEND'});

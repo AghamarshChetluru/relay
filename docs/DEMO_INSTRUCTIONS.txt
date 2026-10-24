@@ -24,7 +24,7 @@ A. THE APP (index.html) – about 3 minutes
    Filters: type chips and a neighbourhood filter. Filters only change what you SEE; your phone still passes everything along.
    Open a card > "I can help" / "Share a lead" (unverified).
 6. Back to "You": the offer arrives only after it travels back (toast). Review offer > Acknowledge, and, if you saved an exact address,
-   "Share my exact address with this volunteer" (sent only to that volunteer; other phones carry it but cannot read it).
+   "Share my exact address with this sender" (sent only to that volunteer; other phones carry it but cannot read it).
 7. Expiry and renewal: tools > "Skip ahead 30 minutes" twice. A 30-minute request expires: volunteers see it under "Expired or resolved",
    it stops being passed along, and My activity keeps it as "Expired" with a Renew button. Renew = new packet, same case, no duplicate cards.
    For a missing person you can also widen the search area when updating.

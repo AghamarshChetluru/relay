@@ -20,6 +20,14 @@ Record every result in a copy of the table at the bottom. **A pass requires evid
 2. Create a request on A. Bring B next to A until B has it. Move B away from A to C (A and C never within range). C must receive it (hops = 2). Then send a reply from C and carry B back to A: A receives it. Record all timestamps.
 3. If A and C could have connected directly at any point, the run is **invalid**.
 
+## 2b. Inbox and notifications (two phones, real BLE) - not yet exercised on hardware
+1. B with the app **closed** (swiped from recents) and notifications allowed: on A create ONE ordinary request. B must show ONE notification for it; tapping it must open that exact request. Lock B: the lock screen must show only a generic line.
+2. Create two more requests on A within a minute. B must show ONE "N new messages" notification (not three); tapping it opens the Inbox with all of them under "New to you", and no extra pop-up repeats them.
+3. On B send an offer to a request from A, then on A (app closed) wait for the response: ONE notification "Someone sent a response"; tapping it opens that response, highlighted.
+4. With B's app **open**, an ordinary request from A must not pop up (inbox badge only); an urgent request in B's declared area or next to it, or a response to B's own request, must pop up once and open that message when tapped; two at once become one "N new messages" pop-up.
+5. Expired messages: after a request expires, B must list it behind open unread requests, show "Expired" once, and offer no reply form.
+6. Record whether each notification arrived with the app closed, with the screen off, and after force-stop (expected: not after force-stop, because Android stops the radio service).
+
 ## 3. Robustness (each at least once)
 Airplane mode + Bluetooth on only; screen off for 10 minutes; app swipe-away from recents; force-stop; phone reboot then reopen; toggle Bluetooth off/on; revoke then re-grant Bluetooth permission; walk out of range mid-photo then return (transfer resumes); request that expires while carried (not forwarded after expiry); renew a case (one card, replies preserved); change neighbourhood; stale area warning after 60 minutes; low-battery saver mode.
 Malformed input: use a BLE tool (e.g. nRF Connect) to write random bytes to the Relay INBOX characteristic: the session must close and the app must keep working.
