@@ -47,7 +47,7 @@ Most answers to a prompt like this start with grief, governance or supply chains
 
 **And nobody can quickly repair it.** "The network" was never one thing; it is a chain of people-run systems: the power stations and the crews that keep them running, the technicians who maintain towers and fibre, the engineers behind data centres, the support desks that restore a failed link. Half of those people are gone. Every chain has lost links it cannot quickly replace, so the outage is not a bad weekend; it is open-ended.
 
-**What still works: the phone in your pocket.** We assume handsets survived, with charged batteries and working short-range radios (Bluetooth). We state this as the premise of the story, not as an engineering claim. The reasoning is that a pulse hurts large systems with long conductors most, and a pocket-sized battery device with a tiny internal antenna is far less exposed; and, more simply, that if the handsets were dead there would be nothing for any digital product to run on. Everything Relay does starts from that one surviving thing.
+**What still works: the phone in your pocket.** We assume the Snap's electromagnetic pulse took down the cellular network but left most handsets working. This is the story's premise, not an engineering claim, but it has real support: US CISA EMP guidance states that "small electronics without cables, such as cell phones… are relatively resilient to EMP, their supporting infrastructures are not," because cables and long conductors act as antennas. The same guidance warns that small devices can still be disrupted, so we assume a fraction of handsets are lost. Everything Relay does starts from the handsets that survive.
 
 So we made the explicit assumptions the case allows:
 
