@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * NOT part of the normal run (skipped unless `-e manual true`). Leaves real notifications in the system tray and returns (with `-e single true`: ONE response, which opens that exact response; without it: a response and a community update, which Relay folds into one "2 new messages" notification that opens the inbox), so a person (or adb) can kill the app process
- * and then tap them: docs/INBOX_AND_NOTIFICATIONS.md, "Process restart check".
+ * and then tap them: docs/android/INBOX_AND_NOTIFICATIONS.md, "Process restart check".
  */
 class ManualRestartFixture {
     @Test fun postNotificationsAndLeaveThem() {

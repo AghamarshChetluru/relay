@@ -21,7 +21,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signing is supplied from ~/.gradle/gradle.properties or env, never from the repo (see docs/BUILD.md).
+            // Signing is supplied from ~/.gradle/gradle.properties or env, never from the repo (see docs/android/BUILD.md).
             val ks = System.getenv("RELAY_KEYSTORE")
             if (ks != null) {
                 signingConfigs.create("relayRelease") {

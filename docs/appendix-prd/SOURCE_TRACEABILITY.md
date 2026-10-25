@@ -10,41 +10,41 @@ Source classes used below: **CODE** (Android/Kotlin and the bundled UI in `proto
 
 | Claim in the PDF | Class | Where it comes from |
 |---|---|---|
-| App is Kotlin BLE engine, SQLite store, bundled WebView UI, native notifications; not Flutter | CODE, DOCS | `android/app/src/main/kotlin/app/relay/{core,ble,store,ui,service}`; `docs/TRANSPORT_ADR.md` decision 2; `docs/INBOX_AND_NOTIFICATIONS.md` intro |
-| Android 8.0+ with BLE | DOCS | `docs/QA_REPORT.md` (field-test build, minSdk 26) |
-| No INTERNET permission | CODE, DOCS | `AndroidManifest.xml`; `docs/SECURITY.md` ("No network exfiltration") |
+| App is Kotlin BLE engine, SQLite store, bundled WebView UI, native notifications; not Flutter | CODE, DOCS | `android/app/src/main/kotlin/app/relay/{core,ble,store,ui,service}`; `docs/architecture/TRANSPORT_ADR.md` decision 2; `docs/android/INBOX_AND_NOTIFICATIONS.md` intro |
+| Android 8.0+ with BLE | DOCS | `docs/quality/QA_REPORT.md` (field-test build, minSdk 26) |
+| No INTERNET permission | CODE, DOCS | `AndroidManifest.xml`; `docs/architecture/SECURITY.md` ("No network exfiltration") |
 | Ten illustrative Delhi neighbourhoods, declared by the user | CODE | `core/Neighborhoods.kt`; onboarding screen in `prototype/app.js` (`screenOnboarding`) |
 | Area reminder about every 30 min; unconfirmed after 60 min counts as unknown for routing | CODE | `core/Policy.kt` (`remindMs`, `staleMs`, `reliable`); `prototype/app.js` (`openArea`, `locationPrompt`) |
 | Radio status strings and states | CODE | `prototype/app.js` `radioState()` |
 | Request categories; urgent 30/60/120 min; general up to 360; missing 1440; replies up to 120; broadcast up to 60 | CODE | `core/Validation.kt` (`URGENT_CATS`, `MAX_*_MS`); lifetime chips seen in the UI; `prototype/mesh.js` `VALIDITY` |
 | Field limits: description 240, broadcast 280, title 100, envelope 4096 B, 500 stored packets, 30 packets/hour per origin | CODE | `core/Limits.kt` |
 | Title generated from category and landmark | CODE (observed) | Saved-confirmation screenshot: “Medical help needed near Hauz Khas Metro, Gate 2” |
-| Photo ~10–15 KB, ≤ 32 KB JPEG, sent after text, lowest priority, 1 KB chunks, SHA-256 | CODE, DOCS | `core/Limits.kt`; UI copy on the Find someone form; `docs/SECURITY.md`; `docs/LIMITATIONS.md`; `core/Model.kt` `priorityOf` |
+| Photo ~10–15 KB, ≤ 32 KB JPEG, sent after text, lowest priority, 1 KB chunks, SHA-256 | CODE, DOCS | `core/Limits.kt`; UI copy on the Find someone form; `docs/architecture/SECURITY.md`; `docs/architecture/LIMITATIONS.md`; `core/Model.kt` `priorityOf` |
 | Priorities: urgent 0, other requests 1, broadcast and attachment 2 | CODE | `core/Model.kt` `priorityOf` |
 | Flood 60 hops for requests, replies, acks; broadcast 30 hops | CODE | `core/Policy.kt` `PolicyConfig`, `routeFor` |
 | Directed routing for missing-person reports: 40 hops, 3 copies toward target, 1 detour (+2 when patient after 16 min), detour wait 3 min, ≤ 2 detour copies | CODE | `core/Policy.kt` `offer`, `PolicyConfig` |
 | Opportunistic fallback: 10 hops, 3 copies | CODE | `core/Policy.kt` `routeFor` |
 | Graph-hop proximity, not GPS | CODE | `core/Neighborhoods.kt` (`distance`, `distanceToSet`) |
-| Remaining lifetime forwarded, receiver sets own expiry | DOCS, CODE | `docs/ARCHITECTURE.md` “Time”; `core/Engine.kt` `receive` (`remaining = min(hop.remainingMs, validityMs)`) |
-| Stored copy dropped 30 min after expiry unless it involves this phone | DOCS, CODE | `docs/INBOX_AND_NOTIFICATIONS.md`; `core/Engine.kt` `EVICT_GRACE_MS` |
+| Remaining lifetime forwarded, receiver sets own expiry | DOCS, CODE | `docs/architecture/ARCHITECTURE.md` “Time”; `core/Engine.kt` `receive` (`remaining = min(hop.remainingMs, validityMs)`) |
+| Stored copy dropped 30 min after expiry unless it involves this phone | DOCS, CODE | `docs/android/INBOX_AND_NOTIFICATIONS.md`; `core/Engine.kt` `EVICT_GRACE_MS` |
 | Scan 10 s every 60 s; burst 10 s every 20 s for 3 min; ≥ 8 s between starts | CODE | `ble/BlePolicy.kt` `ScanPlanner` |
-| Smaller tag dials; cooldown 60 s (10 s with news); back-off 15 s to 10 min; 2 sessions; skip when digests unchanged | CODE | `ble/BlePolicy.kt` `PeerPolicy`; `ble/BleTransport.kt`; `docs/TRANSPORT_ADR.md` |
+| Smaller tag dials; cooldown 60 s (10 s with news); back-off 15 s to 10 min; 2 sessions; skip when digests unchanged | CODE | `ble/BlePolicy.kt` `PeerPolicy`; `ble/BleTransport.kt`; `docs/architecture/TRANSPORT_ADR.md` |
 | 6-byte advert tag (4 B rotating hourly + 2 B digest) | CODE | `ble/BlePolicy.kt` `AdvertisingState` |
-| Link protocol HELLO → INV → WANT → PKT → PACK; only PACK may show “Shared with a nearby phone” | DOCS, CODE | `docs/TRANSPORT_ADR.md`; `docs/SECURITY.md` “Honest delivery state” |
-| BLE GATT chosen over Nearby Connections (no Play services, BLE only) | DOCS | `docs/TRANSPORT_ADR.md` decision 1 |
-| Throughput ~10–100 kB/s; background relaying not guaranteed; no restart after reboot | DOCS | `docs/LIMITATIONS.md` |
-| Ed25519 signatures; ownership by case ID; sealed address to one volunteer (X25519, HKDF, AES-256-GCM); Keystore-wrapped keys; backup off | DOCS, CODE | `docs/SECURITY.md`; `core/Crypto.kt`; `store/KeystoreProtector.kt` |
-| What is not protected (text, photos, areas readable; pseudonymous; no identity checks; custom crypto unreviewed; no audit) | DOCS | `docs/SECURITY.md` “What is NOT protected” |
-| Inbox groups, search semantics, read state, refresh behaviour | DOCS, CODE | `docs/INBOX_AND_NOTIFICATIONS.md`; `prototype/app.js`; `core/Inbox.kt` |
-| Notification rules and “important” classification | DOCS, CODE | `docs/INBOX_AND_NOTIFICATIONS.md`; `core/Inbox.kt` `classify`; `ui/Notifier.kt` |
-| APK sharing from About, installer consent | CODE, DOCS | `prototype/app.js` (`about-share`, `NB.shareApp`); `share/ApkShare.kt`; `docs/SECURITY.md` |
-| Test results (108 JVM, 28 instrumented, UI suites, lint) | DOCS | `docs/INBOX_AND_NOTIFICATIONS.md` final-polish results; `docs/QA_REPORT.md` for the earlier counts |
+| Link protocol HELLO → INV → WANT → PKT → PACK; only PACK may show “Shared with a nearby phone” | DOCS, CODE | `docs/architecture/TRANSPORT_ADR.md`; `docs/architecture/SECURITY.md` “Honest delivery state” |
+| BLE GATT chosen over Nearby Connections (no Play services, BLE only) | DOCS | `docs/architecture/TRANSPORT_ADR.md` decision 1 |
+| Throughput ~10–100 kB/s; background relaying not guaranteed; no restart after reboot | DOCS | `docs/architecture/LIMITATIONS.md` |
+| Ed25519 signatures; ownership by case ID; sealed address to one volunteer (X25519, HKDF, AES-256-GCM); Keystore-wrapped keys; backup off | DOCS, CODE | `docs/architecture/SECURITY.md`; `core/Crypto.kt`; `store/KeystoreProtector.kt` |
+| What is not protected (text, photos, areas readable; pseudonymous; no identity checks; custom crypto unreviewed; no audit) | DOCS | `docs/architecture/SECURITY.md` “What is NOT protected” |
+| Inbox groups, search semantics, read state, refresh behaviour | DOCS, CODE | `docs/android/INBOX_AND_NOTIFICATIONS.md`; `prototype/app.js`; `core/Inbox.kt` |
+| Notification rules and “important” classification | DOCS, CODE | `docs/android/INBOX_AND_NOTIFICATIONS.md`; `core/Inbox.kt` `classify`; `ui/Notifier.kt` |
+| APK sharing from About, installer consent | CODE, DOCS | `prototype/app.js` (`about-share`, `NB.shareApp`); `share/ApkShare.kt`; `docs/architecture/SECURITY.md` |
+| Test results (108 JVM, 28 instrumented, UI suites, lint) | DOCS | `docs/android/INBOX_AND_NOTIFICATIONS.md` final-polish results; `docs/quality/QA_REPORT.md` for the earlier counts |
 | Team-reported physical-phone success (no count quoted) | CASE | Handoff section 5 quotes success “in 2 phones”; the owner later said 4+ phones (session notes, 25 Oct 2026). Neither has models, settings, timings or logs, and the brief forbids inventing counts, so the PDF states no number |
 | Problem framing, users and jobs, alternatives table, principles | CASE | “Product Context Handoff (Expanded)” sections 1, 1A.2 to 1A.4. The handoff itself says the alternatives table is a reasoned comparison, not a scored study; the PDF repeats that |
 | Assumption register and validation methods | CASE, ASSUME | Handoff section 1A.7 (A04, A13 flagged as most fragile); condensed to seven rows |
 | Proposed measures and north star | CASE, ASSUME | Handoff section 1A.8; all labelled proposed, none measured |
 | RFC 4838; Epidemic Routing; Spray and Wait; Bluetooth Mesh spec; two Android pages | EXT | Section 3 below. Cited for design context only |
-| Decision register (8 decisions) | CODE, DOCS, CASE | `docs/TRANSPORT_ADR.md`; `docs/SECURITY.md`; handoff section 4 and 1A.9. “Revisit if” column is the author’s proposal (ASSUME) |
+| Decision register (8 decisions) | CODE, DOCS, CASE | `docs/architecture/TRANSPORT_ADR.md`; `docs/architecture/SECURITY.md`; handoff section 4 and 1A.9. “Revisit if” column is the author’s proposal (ASSUME) |
 
 **Not used on purpose:** the 19% replay figure (small simulated graph; not field evidence), any Briar comparison (the site was unreachable for checking), any adoption, battery or latency numbers (none exist).
 
@@ -81,12 +81,12 @@ Annotations were added by `build/annotate.py`: a translucent highlight band and 
 
 ## 4. Discrepancies found
 
-1. **Physical testing.** `docs/LIMITATIONS.md` and `docs/QA_REPORT.md` say no physical radio testing had been done. The team later reported success on real phones: “2 phones” in the case handoff, “4+ phones” in a later statement. No result sheet was ever recorded (`docs/FIELD_TEST_CHECKLIST.md` is blank). Treated as team-reported, unmeasured, and no count is printed.
-2. **Burst scanning.** `docs/TRANSPORT_ADR.md` says “30 s/20 s burst for the first minute”. The code is a 10 s window every 20 s for 3 minutes (`ScanPlanner`).
+1. **Physical testing.** `docs/architecture/LIMITATIONS.md` and `docs/quality/QA_REPORT.md` say no physical radio testing had been done. The team later reported success on real phones: “2 phones” in the case handoff, “4+ phones” in a later statement. No result sheet was ever recorded (`docs/android/FIELD_TEST_CHECKLIST.md` is blank). Treated as team-reported, unmeasured, and no count is printed.
+2. **Burst scanning.** `docs/architecture/TRANSPORT_ADR.md` says “30 s/20 s burst for the first minute”. The code is a 10 s window every 20 s for 3 minutes (`ScanPlanner`).
 3. **Test counts.** QA report: 93 JVM, 18 instrumented. Final-polish notes: 108 JVM, 28 instrumented. Different dates; the PDF quotes the later figures and says so.
 4. **UI label.** For a missing-person case the request detail sheet heads a sighting “Offer of help · Unverified”, while My activity says “Sighting received”. Behaviour is unaffected.
-5. **Code layout.** `docs/ARCHITECTURE.md` lists planned file names (for example `Ids`, `Wire`, `LinkProtocol`); the actual core files are `Bytes`, `Crypto`, `Framing`, `Link` and others.
-6. **Address encryption wording.** `docs/ARCHITECTURE.md` says “end-to-end encrypted address sharing”. The PDF says “sealed to one recipient” and states the app is not end-to-end encrypted overall, following `docs/SECURITY.md`.
+5. **Code layout.** `docs/architecture/ARCHITECTURE.md` lists planned file names (for example `Ids`, `Wire`, `LinkProtocol`); the actual core files are `Bytes`, `Crypto`, `Framing`, `Link` and others.
+6. **Address encryption wording.** `docs/architecture/ARCHITECTURE.md` says “end-to-end encrypted address sharing”. The PDF says “sealed to one recipient” and states the app is not end-to-end encrypted overall, following `docs/architecture/SECURITY.md`.
 
 ## 5. Limits of the evidence
 

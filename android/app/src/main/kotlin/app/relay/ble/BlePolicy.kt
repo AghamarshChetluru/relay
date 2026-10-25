@@ -6,7 +6,7 @@ import app.relay.core.Writer
 
 /*
  * Pure (no android.*) discovery decisions, so they can be unit-tested on the JVM. BleTransport only executes what these classes decide.
- * None of this is evidence that radios work: see docs/QA_REPORT.md.
+ * None of this is evidence that radios work: see docs/quality/QA_REPORT.md.
  */
 
 /** What is on air: a 4-byte tag that rotates every hour plus a 2-byte inventory digest. Advertising must be restarted when EITHER changes. */

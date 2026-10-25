@@ -66,7 +66,7 @@ After the same fixture (process dead, notifications in the tray), opening the ap
 * The notification text for a request shows type and area; the title of the request is shown in the shade for responses ("about"). Lock-screen content is generic only if the phone is set to hide sensitive notification content (the default "private" visibility honours that setting).
 * Notifications come only from a running process: they exist while the radio service/app runs. If Android stops the service (battery saver), no packet is received and nothing is announced; the unread state is still there when the app opens.
 * A renewal with changed words shows "New" on the card (the label "Request updated" is used by the banner/notification, which see the earlier version).
-* Not tested on two physical phones: this environment has one emulator and no radio peer, so message receipt over real BLE between two handsets was not exercised. BLE forwarding code is unchanged (`ble/*`, `Link.kt`, `Policy.kt`, `Framing.kt`, `mesh.js` have no diff), but receipt-to-notification on real hardware needs the two-phone test in `docs/FIELD_TEST_CHECKLIST.md`.
+* Not tested on two physical phones: this environment has one emulator and no radio peer, so message receipt over real BLE between two handsets was not exercised. BLE forwarding code is unchanged (`ble/*`, `Link.kt`, `Policy.kt`, `Framing.kt`, `mesh.js` have no diff), but receipt-to-notification on real hardware needs the two-phone test in `docs/android/FIELD_TEST_CHECKLIST.md`.
 
 ## Final polish pass (`feature/mobile-inbox-final-polish`)
 

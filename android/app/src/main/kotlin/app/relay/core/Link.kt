@@ -1,6 +1,6 @@
 package app.relay.core
 
-/** Frame type codes of the link protocol (docs/TRANSPORT_ADR.md). Transport-independent: BLE fragments frames, tests pass them directly. */
+/** Frame type codes of the link protocol (docs/architecture/TRANSPORT_ADR.md). Transport-independent: BLE fragments frames, tests pass them directly. */
 object Frame {
     const val HELLO = 1; const val INV = 2; const val WANT = 3; const val PKT = 4; const val PACK = 5
     const val ATT_REQ = 6; const val ATT_CHUNK = 7; const val ATT_ACK = 8; const val BYE = 9; const val ERR = 10; const val NOPKT = 11

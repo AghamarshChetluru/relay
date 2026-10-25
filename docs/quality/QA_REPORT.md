@@ -53,7 +53,7 @@ Signed release build (test key, v2 signature verified), minSdk 26. Found and fix
 - Behaviour with a Location switch off on Android 6-11, with advertising refused by the chipset, and with phones whose clocks disagree by hours (decision logic is unit-tested; no hardware)
 - Photo transfer over the radio (chunk/verify/resume logic is JVM-tested only)
 
-## Release gates (docs/RELAY_V2_2_INDEPENDENT_AUDIT.md)
+## Release gates (docs/quality/RELAY_V2_2_INDEPENDENT_AUDIT.md)
 
 1 GitHub baseline: done. 2 Design: done. 3 Local build: done. 4 Physical radios: **NOT MET**.
 5 Reliability on hardware: **NOT MET**. 6 Security: encryption of the sealed address is implemented

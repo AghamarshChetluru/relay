@@ -1,7 +1,7 @@
 package app.relay.core
 
 /**
- * Per-message-type routing, ported from prototype/mesh.js (`plan`). Differences forced by real phones (documented in docs/ARCHITECTURE.md):
+ * Per-message-type routing, ported from prototype/mesh.js (`plan`). Differences forced by real phones (documented in docs/architecture/ARCHITECTURE.md):
  *  - decisions are made pairwise at contact time (we only ever know the peer in front of us, not "all neighbours"),
  *  - time is real wall-clock minutes, not simulation steps,
  *  - detour copies per phone are capped (the simulation could see every neighbour at once).

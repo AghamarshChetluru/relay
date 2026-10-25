@@ -13,7 +13,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Bluetooth LE transport (docs/TRANSPORT_ADR.md). Every phone is a GATT server (INBOX write / OUTBOX notify), advertises the Relay service
+ * Bluetooth LE transport (docs/architecture/TRANSPORT_ADR.md). Every phone is a GATT server (INBOX write / OUTBOX notify), advertises the Relay service
  * when the hardware allows, scans in duty cycles, and connects to peers following a deterministic role rule. Each connection runs one
  * [LinkSession]. UNVERIFIED ON PHYSICAL RADIOS: see QA_REPORT.md. All callbacks are marshalled onto one worker thread.
  */

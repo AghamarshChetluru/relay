@@ -40,4 +40,4 @@ Release builds are signed only when these environment variables are set (never c
     cd android && ./gradlew assembleRelease     # -> app/build/outputs/apk/release/app-release.apk
     tests/verify_apk.sh android/app/build/outputs/apk/release/app-release.apk
     apksigner verify --print-certs <apk>
-Install and test steps for testers: `docs/INSTALL_AND_TEST.md`.
+Install and test steps for testers: `docs/android/INSTALL_AND_TEST.md`.
