@@ -211,7 +211,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     private fun connect(dev: BluetoothDevice, tagKey: String, theirDigest: Int) {
         val link = Link(dev.address, tagKey, theirDigest, client = true); links[dev.address] = link
         diag.count("connectAttempts"); diag.event("connecting to phone ${tagKey.take(4)}")
-        link.gatt = dev.connectGatt(ctx, false, link.clientCb, BluetoothDevice.TRANSPORT_LE)
+        link.gatt = dev.connectGatt(ctx, false, link.clientCb, BluetoothDevice.TRANSPORT_LE, BluetoothDevice.PHY_LE_1M_MASK or BluetoothDevice.PHY_LE_2M_MASK)    // 2M where both radios support it
         h.postDelayed({ if (link.session == null && links[dev.address] === link) { memory[tagKey]?.let { it.fails++ }; link.teardown("connect timeout") } }, CONNECT_TIMEOUT_MS)
         onStatus()
     }
@@ -226,7 +226,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
     private fun openServer() {
         val srv = btManager.openGattServer(ctx, serverCb) ?: throw IllegalStateException("no gatt server")
         val svc = BluetoothGattService(SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
-        svc.addCharacteristic(BluetoothGattCharacteristic(INBOX, BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE))
+        svc.addCharacteristic(BluetoothGattCharacteristic(INBOX, BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE, BluetoothGattCharacteristic.PERMISSION_WRITE))
         val out = BluetoothGattCharacteristic(OUTBOX, BluetoothGattCharacteristic.PROPERTY_NOTIFY, BluetoothGattCharacteristic.PERMISSION_READ)
         out.addDescriptor(BluetoothGattDescriptor(CCCD, BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE))
         svc.addCharacteristic(out); server = srv; srv.addService(svc)
@@ -262,9 +262,10 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
 
         val clientCb = object : BluetoothGattCallback() {
             override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-                h.post { if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) { diag.count("connectionsEstablished"); diag.event("connected to phone ${tagKey.take(4)}"); if (!g.requestMtu(DESIRED_MTU)) g.discoverServices() } else { if (session == null) memory[tagKey]?.let { it.fails++ }; teardown("disconnected ($status)") } }
+                h.post { if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) { diag.count("connectionsEstablished"); diag.event("connected to phone ${tagKey.take(4)}"); try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch (_: Exception) {}; if (!g.requestMtu(DESIRED_MTU)) g.discoverServices() } else { if (session == null) memory[tagKey]?.let { it.fails++ }; teardown("disconnected ($status)") } }
             }
             override fun onMtuChanged(g: BluetoothGatt, m: Int, status: Int) { h.post { if (status == BluetoothGatt.GATT_SUCCESS) mtu = m; g.discoverServices() } }
+            override fun onPhyUpdate(g: BluetoothGatt, txPhy: Int, rxPhy: Int, status: Int) { h.post { if (status == BluetoothGatt.GATT_SUCCESS) diag.event("radio speed: " + (if (txPhy == BluetoothDevice.PHY_LE_2M && rxPhy == BluetoothDevice.PHY_LE_2M) "2 Mbit/s" else "1 Mbit/s")) } }
             override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
                 h.post {
                     val svc = g.getService(SERVICE); inboxChar = svc?.getCharacteristic(INBOX); outboxChar = svc?.getCharacteristic(OUTBOX)
@@ -304,7 +305,11 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
         override fun send(frame: ByteArray) {
             Framing.fragment(Framing.encode(frame), payload()).forEach { outQueue.add(it) }; pump()
         }
-        override fun close(reason: String) { h.postDelayed({ session?.let { finish(it) } }, 400) }   // let BYE flush first
+        override fun close(reason: String) { closeWhenFlushed(System.currentTimeMillis() + 3_000) }
+        /** Let BYE (and anything before it) leave the radio first: at least 400 ms, then until the send queue is empty, but never more than 3 s. */
+        private fun closeWhenFlushed(deadline: Long) {
+            h.postDelayed({ if ((outQueue.isNotEmpty() || writing) && !done && System.currentTimeMillis() < deadline) closeWhenFlushed(deadline) else session?.let { finish(it) } }, 400)
+        }
 
         private fun pump() {
             if (writing || done) return
@@ -312,8 +317,12 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
             writing = true
             val ok = try {
                 if (client) {
-                    val c = inboxChar ?: return; c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                    if (Build.VERSION.SDK_INT >= 33) gatt!!.writeCharacteristic(c, frag, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
+                    val c = inboxChar ?: return
+                    // Write-without-response skips one round trip per fragment; the phone's own stack still paces us (one write in flight, released by onCharacteristicWrite).
+                    // A peer on an older build only offers acknowledged writes, so fall back to those.
+                    val wt = if (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    c.writeType = wt
+                    if (Build.VERSION.SDK_INT >= 33) gatt!!.writeCharacteristic(c, frag, wt) == BluetoothStatusCodes.SUCCESS
                     else { @Suppress("DEPRECATION") c.value = frag; @Suppress("DEPRECATION") gatt!!.writeCharacteristic(c) }
                 } else {
                     val c = server?.getService(SERVICE)?.getCharacteristic(OUTBOX) ?: return
@@ -331,7 +340,7 @@ class BleTransport(private val ctx: Context, private val engine: RelayEngine, pr
             val st = s.stats; val okSession = s.closeReason == "done"
             diag.count(if (okSession) "sessionsCompleted" else "sessionsFailed"); diag.count("packetsConfirmedStoredByPeer", st.sentPackets.toLong()); diag.count("packetsStoredFromPeer", st.stored.toLong())
             diag.count("duplicatesIgnored", st.duplicates.toLong()); diag.count("packetsRejected", st.rejected.toLong()); diag.count("photosReceived", st.attachmentsDone.toLong())
-            diag.event((if (okSession) "exchange finished: " else "exchange ended early (${s.closeReason}): ") + "${st.sentPackets} of ours confirmed stored by the other phone, ${st.stored} new stored from it, ${st.duplicates} already had, ${st.rejected} rejected, ${st.attachmentsDone} photos")
+            diag.event((if (okSession) "exchange finished in ${System.currentTimeMillis() - startedAt} ms (${st.bytesOut} B out, ${st.bytesIn} B in): " else "exchange ended early (${s.closeReason}): ") + "${st.sentPackets} of ours confirmed stored by the other phone, ${st.stored} new stored from it, ${st.duplicates} already had, ${st.rejected} rejected, ${st.attachmentsDone} photos")
             if (okSession) { mem.fails = 0; lastContactMs = System.currentTimeMillis() } else mem.fails++
             mem.lastSession = System.currentTimeMillis(); mem.theirDigest = theirDigest; mem.myDigest = engine.inventoryDigest()
             teardown(s.closeReason ?: "closed")
