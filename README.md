@@ -41,18 +41,23 @@ An offline-first community help network for Android. Nearby phones carry urgent 
 
 Most answers to a prompt like this start with grief, governance or supply chains. We started with a more mechanical question: **what stops working, first, for the people who are still here?**
 
-### What actually breaks first
+### What breaks first
 
-Not the radio waves. **People.** "The network" is not a thing; it is a chain of people-run systems: the power stations and the crews that keep them running, the technicians who maintain towers and fibre, the engineers behind data centres, the support desks that restore a failed link. Remove half the people at once, at random, and every one of those chains loses links it cannot quickly replace. Phones themselves keep working until their batteries die. The service they depend on is what becomes unreliable, and then unavailable.
+**The communication systems.** In the world we designed for, the Snap does not only remove half the people. It also fires a **heavy electromagnetic pulse (EMP)**. That is our premise: overnight, **the communication systems are gone**. Cell towers and base stations, the routers and switches behind them, the data-centre equipment and the grid-tied hardware that powers them are large installations wired together with long cables, and long conductors are exactly where a strong pulse couples in and burns out electronics. No cellular service. No internet. No servers.
 
-So we made the explicit assumption the case allows:
+**And nobody can quickly repair it.** "The network" was never one thing; it is a chain of people-run systems: the power stations and the crews that keep them running, the technicians who maintain towers and fibre, the engineers behind data centres, the support desks that restore a failed link. Half of those people are gone. Every chain has lost links it cannot quickly replace, so the outage is not a bad weekend; it is open-ended.
+
+**What still works: the phone in your pocket.** We assume handsets survived, with charged batteries and working short-range radios (Bluetooth). We state this as the premise of the story, not as an engineering claim. The reasoning is that a pulse hurts large systems with long conductors most, and a pocket-sized battery device with a tiny internal antenna is far less exposed; and, more simply, that if the handsets were dead there would be nothing for any digital product to run on. Everything Relay does starts from that one surviving thing.
+
+So we made the explicit assumptions the case allows:
 
 | We assume | We do **not** assume |
 |---|---|
-| Survivors still have charged smartphones | Cellular service |
-| Short-range radios (Bluetooth) still work | Internet or any server |
+| Survivors still have charged smartphones (the pulse spared handsets) | Cellular service (the EMP took the towers) |
+| Short-range radios (Bluetooth) still work | Internet or any server (the EMP took the data centres) |
 | People are physically close to one another, in neighbourhoods | GPS or satellite positioning |
 | Some people are willing to help a stranger | Accounts, phone numbers, or knowing whom to call |
+| Nobody is coming to repair the network soon (half the repair crews are gone) | Any official dispatch or help line |
 
 ### What happens the day after
 
