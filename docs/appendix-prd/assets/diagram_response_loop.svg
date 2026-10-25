@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 590" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#14263a"/></marker>
+  </defs>
+  <style>
+    .node{fill:#ffffff;stroke:#14263a;stroke-width:2;rx:14}
+    .human{fill:#fbecc4;stroke:#14263a;stroke-width:2;rx:14}
+    .t{font-size:19px;font-weight:700;fill:#14263a}
+    .b{font-size:15.5px;fill:#14263a}
+    .pill{fill:#eaf2ff;stroke:#146ce4;stroke-width:1.6;rx:15}
+    .pillg{fill:#f1efe8;stroke:#8a8576;stroke-width:1.6;stroke-dasharray:5 4;rx:15}
+    .pt{font-size:14.5px;fill:#0f4fa8;font-weight:600}
+    .ptg{font-size:14.5px;fill:#5d5a50;font-weight:600}
+    .tag{font-size:13px;letter-spacing:1.4px;fill:#8a6a0f;font-weight:700}
+    .arrow{stroke:#14263a;stroke-width:2.4;fill:none}
+  </style>
+
+  <text class="tag" x="0" y="22">NETWORK STEPS: PHONES EXCHANGE SIGNED PACKETS WHEN THEY MEET</text>
+
+  <!-- row 1 -->
+  <g transform="translate(0,34)"><rect class="node" width="215" height="150"/>
+    <text class="t" x="14" y="32">1  Created on A</text>
+    <text class="b" x="14" y="62">Signed on the phone.</text><text class="b" x="14" y="84">The requester picks the</text><text class="b" x="14" y="106">lifetime (urgent: 30, 60</text><text class="b" x="14" y="128">or 120 minutes).</text></g>
+  <g transform="translate(261,34)"><rect class="node" width="215" height="150"/>
+    <text class="t" x="14" y="32">2  Handed to B</text>
+    <text class="b" x="14" y="62">B checks the signature</text><text class="b" x="14" y="84">and limits, stores a copy</text><text class="b" x="14" y="106">and sends back a</text><text class="b" x="14" y="128">“stored” receipt.</text></g>
+  <g transform="translate(522,34)"><rect class="node" width="215" height="150"/>
+    <text class="t" x="14" y="32">3  Carried</text>
+    <text class="b" x="14" y="62">B keeps the copy on disk</text><text class="b" x="14" y="84">and moves on. Minutes or</text><text class="b" x="14" y="106">hours may pass before the</text><text class="b" x="14" y="128">next encounter.</text></g>
+  <g transform="translate(783,34)"><rect class="node" width="215" height="150"/>
+    <text class="t" x="14" y="32">4  Reaches C</text>
+    <text class="b" x="14" y="62">B meets C. C stores it and</text><text class="b" x="14" y="84">may pass it on, within</text><text class="b" x="14" y="106">hop and copy limits,</text><text class="b" x="14" y="128">until it expires.</text></g>
+  <path class="arrow" d="M217,109 H259" marker-end="url(#ar)"/><path class="arrow" d="M478,109 H520" marker-end="url(#ar)"/><path class="arrow" d="M739,109 H781" marker-end="url(#ar)"/>
+
+  <!-- row 1 pills: what the requester's app may say -->
+  <g transform="translate(0,194)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“Saved on your phone”</text></g>
+  <g transform="translate(261,194)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“Shared with a nearby phone”</text></g>
+  <g transform="translate(522,194)"><rect class="pillg" width="215" height="32"/><text class="ptg" x="107" y="21" text-anchor="middle">no further status on A</text></g>
+  <g transform="translate(783,194)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“Received on this phone”</text></g>
+
+  <!-- wrap arrow -->
+  <path class="arrow" d="M890,234 V282 H107 V316" marker-end="url(#ar)"/>
+  <text class="tag" x="0" y="290" dy="-8"></text>
+  <text class="tag" x="130" y="272">HUMAN STEPS (SHADED) AND THE RETURN PATH</text>
+
+  <!-- row 2 -->
+  <g transform="translate(0,324)"><rect class="human" width="215" height="150"/>
+    <text class="t" x="14" y="32">5  A person decides</text>
+    <text class="b" x="14" y="62">C’s owner notices it (pop-up,</text><text class="b" x="14" y="84">notification or Inbox) and</text><text class="b" x="14" y="106">chooses whether to offer.</text><text class="b" x="14" y="128">Nobody is assigned.</text></g>
+  <g transform="translate(261,324)"><rect class="node" width="215" height="150"/>
+    <text class="t" x="14" y="32">6  Offer travels back</text>
+    <text class="b" x="14" y="62">The signed offer follows</text><text class="b" x="14" y="84">the same store-carry-</text><text class="b" x="14" y="106">forward path to A, under</text><text class="b" x="14" y="128">the same expiry rules.</text></g>
+  <g transform="translate(522,324)"><rect class="human" width="215" height="150"/>
+    <text class="t" x="14" y="32">7  Requester answers</text>
+    <text class="b" x="14" y="62">A reads the unverified</text><text class="b" x="14" y="84">offer, taps Acknowledge,</text><text class="b" x="14" y="106">and may share an exact</text><text class="b" x="14" y="128">address with that sender.</text></g>
+  <g transform="translate(783,324)"><rect class="human" width="215" height="150"/>
+    <text class="t" x="14" y="32">8  Close or expire</text>
+    <text class="b" x="14" y="62">A marks it resolved, or</text><text class="b" x="14" y="84">renews it as a new signed</text><text class="b" x="14" y="106">version. Otherwise the</text><text class="b" x="14" y="128">lifetime ends.</text></g>
+  <path class="arrow" d="M217,399 H259" marker-end="url(#ar)"/><path class="arrow" d="M478,399 H520" marker-end="url(#ar)"/><path class="arrow" d="M739,399 H781" marker-end="url(#ar)"/>
+
+  <g transform="translate(0,484)"><rect class="pillg" width="215" height="32"/><text class="ptg" x="107" y="21" text-anchor="middle">voluntary, never assigned</text></g>
+  <g transform="translate(261,484)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“2 offers have arrived”</text></g>
+  <g transform="translate(522,484)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“Unverified. Review it…”</text></g>
+  <g transform="translate(783,484)"><rect class="pill" width="215" height="32"/><text class="pt" x="107" y="21" text-anchor="middle">“Expired” / resolved</text></g>
+
+  <rect x="0" y="538" width="998" height="42" rx="10" fill="#fff7e0" stroke="#8a6a0f" stroke-width="1.6" stroke-dasharray="6 4"/>
+  <text x="499" y="565" text-anchor="middle" font-size="16.5" fill="#14263a" font-weight="700">No state anywhere in the app means “help has arrived”. An offer, and its acknowledgment, are only receipts.</text>
+  <text x="0" y="586" font-size="0"> </text>
+</svg>

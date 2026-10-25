@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#14263a"/></marker>
+  </defs>
+  <style>
+    .panel{fill:#ffffff;stroke:#d8cfb8;stroke-width:2;rx:16}
+    .h{font-size:19px;font-weight:700;fill:#14263a}
+    .c{font-size:16px;fill:#14263a}
+    .ph{fill:#ffffff;stroke:#14263a;stroke-width:3}
+    .phg{fill:#f1efe8;stroke:#a39d8a;stroke-width:3}
+    .l{font-size:24px;font-weight:700;fill:#14263a;text-anchor:middle}
+    .lg{font-size:24px;font-weight:700;fill:#a39d8a;text-anchor:middle}
+    .ring{fill:none;stroke:#146ce4;stroke-width:2.6;stroke-dasharray:7 6}
+    .req{fill:#d9a21b;stroke:#14263a;stroke-width:2}
+    .rq{font-size:15px;font-weight:700;fill:#14263a;text-anchor:middle}
+    .arrow{stroke:#14263a;stroke-width:2.4;fill:none}
+  </style>
+
+  <!-- panel 1 -->
+  <rect class="panel" x="0" y="0" width="320" height="330"/>
+  <text class="h" x="16" y="34">t1  A meets B</text>
+  <ellipse class="ring" cx="110" cy="150" rx="92" ry="62"/>
+  <circle class="ph" cx="60" cy="150" r="32"/><text class="l" x="60" y="159">A</text>
+  <circle class="ph" cx="160" cy="150" r="32"/><text class="l" x="160" y="159">B</text>
+  <circle class="phg" cx="262" cy="150" r="32"/><text class="lg" x="262" y="159">C</text>
+  <rect class="req" x="46" y="96" width="28" height="22" rx="5"/><text class="rq" x="60" y="112">R</text>
+  <rect class="req" x="146" y="96" width="28" height="22" rx="5"/><text class="rq" x="160" y="112">R</text>
+  <path class="arrow" d="M80,107 H142" marker-end="url(#ar)"/>
+  <text class="c" x="16" y="248">A creates request R. B comes</text><text class="c" x="16" y="270">into range, validates it and</text><text class="c" x="16" y="292">stores a copy. C is too far away.</text>
+
+  <!-- panel 2 -->
+  <rect class="panel" x="340" y="0" width="320" height="330"/>
+  <text class="h" x="356" y="34">t2  B moves on</text>
+  <circle class="ph" cx="400" cy="150" r="32"/><text class="l" x="400" y="159">A</text>
+  <circle class="ph" cx="500" cy="150" r="32"/><text class="l" x="500" y="159">B</text>
+  <circle class="phg" cx="602" cy="150" r="32"/><text class="lg" x="602" y="159">C</text>
+  <rect class="req" x="486" y="96" width="28" height="22" rx="5"/><text class="rq" x="500" y="112">R</text>
+  <path class="arrow" d="M538,150 H562" marker-end="url(#ar)"/>
+  <text class="c" x="356" y="248">B walks away carrying its stored</text><text class="c" x="356" y="270">copy. A and C are never in range</text><text class="c" x="356" y="292">of each other at the same time.</text>
+
+  <!-- panel 3 -->
+  <rect class="panel" x="680" y="0" width="320" height="330"/>
+  <text class="h" x="696" y="34">t3  B meets C</text>
+  <circle class="phg" cx="740" cy="150" r="32"/><text class="lg" x="740" y="159">A</text>
+  <ellipse class="ring" cx="880" cy="150" rx="92" ry="62"/>
+  <circle class="ph" cx="850" cy="150" r="32"/><text class="l" x="850" y="159">B</text>
+  <circle class="ph" cx="930" cy="150" r="32"/><text class="l" x="930" y="159">C</text>
+  <rect class="req" x="836" y="96" width="28" height="22" rx="5"/><text class="rq" x="850" y="112">R</text>
+  <rect class="req" x="916" y="96" width="28" height="22" rx="5"/><text class="rq" x="930" y="112">R</text>
+  <path class="arrow" d="M870,107 H912" marker-end="url(#ar)"/>
+  <text class="c" x="696" y="248">B hands the copy to C. No</text><text class="c" x="696" y="270">end-to-end path between A and</text><text class="c" x="696" y="292">C ever existed at one moment.</text>
+
+  <rect x="0" y="344" width="14" height="14" rx="3" fill="#d9a21b" stroke="#14263a" stroke-width="1.6"/>
+  <text x="22" y="356" font-size="15" fill="#14263a">R = a copy of the request</text>
+  <path d="M250,351 h28" stroke="#146ce4" stroke-width="2.6" stroke-dasharray="7 6"/>
+  <text x="286" y="356" font-size="15" fill="#14263a">Bluetooth LE range (illustrative)</text>
+  <text x="560" y="356" font-size="15" fill="#5d5a50">Mechanism diagram, not a measurement.</text>
+</svg>
